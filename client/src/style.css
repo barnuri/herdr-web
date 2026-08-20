@@ -36,9 +36,13 @@ body {
 }
 
 body {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+
+#root {
     display: flex;
     flex-direction: column;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    height: 100%;
 }
 
 /* ---------- top bar ---------- */
@@ -393,16 +397,59 @@ input:focus-visible,
 .ab-15 { background: #f4f7fa; }
 
 /* wider screens: cap content width, keep the phone feel */
+/* desktop: pane list becomes a left sidebar, terminal takes the rest */
 @media (min-width: 900px) {
+    #root {
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        grid-template-rows: auto 1fr auto;
+        grid-template-areas:
+            'topbar topbar'
+            'sidebar main'
+            'sidebar composer';
+    }
+
+    .topbar {
+        grid-area: topbar;
+    }
+
+    .pane-tabs {
+        grid-area: sidebar;
+        flex-direction: column;
+        align-items: stretch;
+        overflow-y: auto;
+        overflow-x: hidden;
+        border-bottom: none;
+        border-right: 1px solid var(--border);
+        background: var(--panel);
+    }
+
+    .pane-chip {
+        justify-content: flex-start;
+        text-align: left;
+    }
+
+    .pane-chip span:nth-child(2) {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .terminal-wrap {
+        grid-area: main;
+    }
+
+    .composer {
+        grid-area: composer;
+    }
+
     .terminal {
         font-size: 14px;
     }
 
-    .composer,
-    .pane-tabs,
-    .topbar {
-        padding-left: max(14px, calc((100vw - 900px) / 2));
-        padding-right: max(14px, calc((100vw - 900px) / 2));
+    .quick-keys {
+        flex-wrap: wrap;
+        overflow-x: visible;
     }
 }
 

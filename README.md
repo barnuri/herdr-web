@@ -2,8 +2,12 @@
 
 Mobile-first web UI plugin for [herdr](https://herdr.dev) — view and drive your coding-agent
 panes from a phone browser, with notifications when an agent finishes or gets stuck.
+Fits desktops too: at wide viewports the pane list becomes a sidebar next to a full-height
+terminal.
 
-Inspired by [eyalev/herdr-web](https://github.com/eyalev/herdr-web).
+<p align="center"><img src="assets/demo.gif" width="320" alt="phone demo" /></p>
+
+![desktop layout](assets/desktop.png)
 
 ## Features
 
@@ -35,8 +39,19 @@ dependency (`ws`).
 
 ## Install
 
+From GitHub:
+
 ```bash
 herdr plugin install barnuri/herdr-web
+```
+
+Or from a local clone (linked in place — edits take effect without reinstalling):
+
+```bash
+git clone https://github.com/barnuri/herdr-web
+cd herdr-web
+npm install --omit=dev   # the [[build]] step herdr runs on a GitHub install
+herdr plugin link .
 ```
 
 The startup hook launches the server when herdr starts. Open it with the
@@ -79,15 +94,23 @@ of scope for v1.
 
 ## Development
 
-```bash
-npm install               # server dep (ws)
-cd client && npm install  # react/vite toolchain
+One helper script per platform, same four subcommands (`setup` · `dev` · `test` · `build`,
+default `dev`; deps install automatically on first run):
 
-npm start                 # run the server (serves the committed build)
-cd client && npm run dev  # vite dev server with /ws proxy to :7936
-cd client && npm test     # vitest unit tests
-npm test                  # server lib unit tests (node --test)
-cd client && npm run build  # rebuild public/ (commit the result)
+macOS / Linux:
+
+```bash
+scripts/dev.sh          # server on :7936 + vite dev on :5173 (ws-proxied)
+scripts/dev.sh test     # server (node --test) + client (vitest) suites
+scripts/dev.sh build    # rebuild public/ from client/ (commit the result)
+```
+
+Windows (PowerShell):
+
+```powershell
+scripts/dev.ps1         # same as above
+scripts/dev.ps1 test
+scripts/dev.ps1 build
 ```
 
 ## Publishing note
