@@ -59,7 +59,14 @@ The startup hook launches the server when herdr starts. Open it with the
 
 ## Configuration
 
-`config.json` in the plugin config dir (`herdr plugin config-dir barnuri.herdr-web`):
+`config.json` in the plugin config dir (`herdr plugin config-dir barnuri.herdr-web`). Create it
+in one line:
+
+```bash
+echo '{ "port": 7936 }' > "$(herdr plugin config-dir barnuri.herdr-web)/config.json"
+```
+
+All keys (every one optional):
 
 ```json
 {
