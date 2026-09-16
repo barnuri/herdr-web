@@ -32,6 +32,14 @@ class HerdrWebServer {
 
     static MAX_PUSH_BODY_BYTES = 16 * 1024;
 
+    // Coalesce PTY output into at most ~12 frames/sec. herdr's TUI emits one chunk per
+    // repaint (~30/s while agents work); forwarding every chunk costs the phone one
+    // parse+paint pass each, which is what makes the mobile view feel janky.
+    static OUTPUT_FLUSH_MS = 80;
+
+    // A burst this large is real output, not a spinner: send it now instead of waiting.
+    static OUTPUT_MAX_PENDING_BYTES = 64 * 1024;
+
     static IMAGE_ROUTE = '/images';
 
     constructor(config, pushService = new PushService()) {
@@ -297,6 +305,7 @@ class HerdrWebServer {
         this.clients.delete(socket);
         const session = this.ptyBySocket.get(socket);
         if (session) {
+            session.cancelPendingOutput?.();
             session.kill();
             this.ptyBySocket.delete(socket);
         }
@@ -345,11 +354,42 @@ class HerdrWebServer {
             command: process.env.HERDR_BIN_PATH || 'herdr',
             args: this.config.herdrArgs,
         });
+        const pending = { data: '', timer: null };
+        const flush = () => {
+            if (pending.timer) {
+                clearTimeout(pending.timer);
+                pending.timer = null;
+            }
+            if (!pending.data) {
+                return;
+            }
+            const data = pending.data;
+            pending.data = '';
+            this.send(socket, { type: 'output', data });
+        };
+        const queueOutput = (data) => {
+            pending.data += data;
+            if (pending.data.length >= HerdrWebServer.OUTPUT_MAX_PENDING_BYTES) {
+                flush();
+                return;
+            }
+            if (!pending.timer) {
+                pending.timer = setTimeout(flush, HerdrWebServer.OUTPUT_FLUSH_MS);
+            }
+        };
+        session.cancelPendingOutput = () => {
+            if (pending.timer) {
+                clearTimeout(pending.timer);
+                pending.timer = null;
+            }
+            pending.data = '';
+        };
         session.start({
             cols,
             rows,
-            onData: (data) => this.send(socket, { type: 'output', data }),
+            onData: queueOutput,
             onExit: ({ exitCode }) => {
+                flush();
                 this.send(socket, { type: 'exit', code: exitCode });
                 this.ptyBySocket.delete(socket);
             },
