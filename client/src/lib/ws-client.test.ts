@@ -3,7 +3,10 @@ import { HerdrSocket } from './ws-client';
 import type { ClientMessage } from '../types';
 
 class MockWebSocket {
+    static readonly CONNECTING = 0;
     static readonly OPEN = 1;
+    static readonly CLOSING = 2;
+    static readonly CLOSED = 3;
     static instances: MockWebSocket[] = [];
 
     readyState = 0;
@@ -42,8 +45,9 @@ function makeMessageEvent(data: string): MessageEvent<string> {
 function makeClient() {
     const onMessage = vi.fn();
     const onStatusChange = vi.fn();
-    const client = new HerdrSocket('ws://localhost:8123/ws', onMessage, onStatusChange);
-    return { client, onMessage, onStatusChange };
+    const onStateChange = vi.fn();
+    const client = new HerdrSocket('ws://localhost:8123/ws', onMessage, onStatusChange, onStateChange);
+    return { client, onMessage, onStatusChange, onStateChange };
 }
 
 describe('HerdrSocket', () => {
@@ -86,10 +90,20 @@ describe('HerdrSocket', () => {
         expect(MockWebSocket.instances).toHaveLength(2);
     });
 
-    it('doubles the reconnect delay on repeated failures, capped at 15000ms', () => {
+    it('first retry delay is exactly 1000ms', () => {
         const { client } = makeClient();
         client.connect();
-        const delays = [1000, 2000, 4000, 8000, 15000, 15000];
+        latestSocket().onclose?.();
+        vi.advanceTimersByTime(999);
+        expect(MockWebSocket.instances).toHaveLength(1);
+        vi.advanceTimersByTime(1);
+        expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it('doubles the reconnect delay on repeated failures, capped at 30000ms', () => {
+        const { client } = makeClient();
+        client.connect();
+        const delays = [1000, 2000, 4000, 8000, 16000, 30000, 30000];
         for (const delay of delays) {
             const before = MockWebSocket.instances.length;
             latestSocket().onclose?.();
@@ -98,6 +112,87 @@ describe('HerdrSocket', () => {
             vi.advanceTimersByTime(1);
             expect(MockWebSocket.instances).toHaveLength(before + 1);
         }
+    });
+
+    it('emits connecting, open and reconnecting connection states', () => {
+        const { client, onStateChange } = makeClient();
+        client.connect();
+        expect(onStateChange).toHaveBeenLastCalledWith('connecting');
+        latestSocket().onopen?.();
+        expect(onStateChange).toHaveBeenLastCalledWith('open');
+        latestSocket().onclose?.();
+        expect(onStateChange).toHaveBeenLastCalledWith('reconnecting');
+    });
+
+    it('cleans up a stale socket before opening a new connection', () => {
+        const { client } = makeClient();
+        client.connect();
+        const first = latestSocket();
+        client.connect();
+        expect(first.closeCalls).toBe(1);
+        expect(MockWebSocket.instances).toHaveLength(2);
+        expect(latestSocket()).not.toBe(first);
+    });
+
+    it('detaches every handler and closes the socket on close()', () => {
+        const { client } = makeClient();
+        client.connect();
+        const socket = latestSocket();
+        client.close();
+        expect(socket.closeCalls).toBe(1);
+        expect(socket.onopen).toBeNull();
+        expect(socket.onmessage).toBeNull();
+        expect(socket.onclose).toBeNull();
+        expect(socket.onerror).toBeNull();
+    });
+
+    it('closes the errored socket and reconnects only once after onerror', () => {
+        const { client } = makeClient();
+        client.connect();
+        const first = latestSocket();
+        first.onerror?.();
+        expect(first.closeCalls).toBe(1);
+        // browsers fire onclose right after onerror: must not schedule a second reconnect
+        first.onclose?.();
+        vi.advanceTimersByTime(1000);
+        expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it('pauses the backoff while hidden and retries immediately once visible', () => {
+        const { client } = makeClient();
+        client.connect();
+        latestSocket().onclose?.();
+        client.pauseReconnect();
+        vi.advanceTimersByTime(60000);
+        expect(MockWebSocket.instances).toHaveLength(1);
+        client.resumeReconnect();
+        expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it('resumeReconnect() does not open a second socket while one is live', () => {
+        const { client } = makeClient();
+        client.connect();
+        latestSocket().readyState = MockWebSocket.OPEN;
+        client.resumeReconnect();
+        expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    it('stops auto-reconnecting after the attempt limit and reports failed', () => {
+        const { client, onStatusChange, onStateChange } = makeClient();
+        client.connect();
+        for (let attempt = 0; attempt < HerdrSocket.MAX_RECONNECT_ATTEMPTS; attempt += 1) {
+            latestSocket().onclose?.();
+            vi.advanceTimersByTime(HerdrSocket.RECONNECT_MAX_MS);
+        }
+        const created = MockWebSocket.instances.length;
+        latestSocket().onclose?.();
+        vi.advanceTimersByTime(HerdrSocket.RECONNECT_MAX_MS * 10);
+        expect(MockWebSocket.instances).toHaveLength(created);
+        expect(onStateChange).toHaveBeenLastCalledWith('failed');
+        expect(onStatusChange).toHaveBeenLastCalledWith(false);
+        // a foreground event must not sneak past the failure limit either
+        client.resumeReconnect();
+        expect(MockWebSocket.instances).toHaveLength(created);
     });
 
     it('resets the backoff after a successful open', () => {

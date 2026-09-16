@@ -5,7 +5,7 @@ import { ToastHost } from './components/ToastHost';
 import { TopBar } from './components/TopBar';
 import { XTermView } from './components/XTermView';
 import { NotificationHelp } from './components/NotificationHelp';
-import { insecureContextHelp, notificationSettingsHelp, untrustedCertHelp } from './lib/notifications';
+import { insecureContextHelp, notificationSettingsHelp, untrustedCertHelp, webviewHelp } from './lib/notifications';
 import { ALL_CHANGES_STORAGE_KEY, TOASTS_STORAGE_KEY, loadStoredSettings, shouldAnnounce } from './lib/notification-settings';
 import type { NotificationSettings } from './lib/notification-settings';
 import { quoteShellPath, uploadImage, validateImageFile } from './lib/terminal-image';
@@ -39,7 +39,7 @@ function initialKeyboardEnabled(): boolean {
 }
 
 export function App() {
-    const { connected, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
+    const { connected, status, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
     const [stored, setStored] = useState(loadStoredSettings);
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications(stored.allChanges);
     const [notice, setNotice] = useState<Notice | null>(null);
@@ -147,6 +147,12 @@ export function App() {
             return;
         }
         if (result === 'unsupported') {
+            // a secure context without the Notification API is an in-app WebView
+            // (the Android shell), not a plain-HTTP problem: point at Chrome
+            if (window.isSecureContext && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                setHelp(webviewHelp(window.location.href));
+                return;
+            }
             let httpsUrl: string | null = null;
             try {
                 const meta = (await (await fetch('/meta')).json()) as { https: boolean; httpsPort: number };
@@ -164,6 +170,7 @@ export function App() {
         <>
             <TopBar
                 connected={connected}
+                status={status}
                 panes={panes}
                 notificationsEnabled={notificationsEnabled || stored.toasts}
                 onOpenSettings={() => setSettingsOpen(true)}

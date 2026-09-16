@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { ClientMessage } from '../types';
 import type { TerminalMessage } from '../hooks/useHerdrSocket';
@@ -12,6 +13,7 @@ import { KittyOverlayRenderer } from '../lib/kitty/overlay-renderer';
 import { toVisibleFrames } from '../lib/kitty/visible-frames';
 import type { KittyBitmap } from '../lib/kitty/types';
 import { TouchGestureRecognizer, type TouchPoint } from '../lib/touch/gesture-recognizer';
+import { FLING_MAX_FRAME_MS, planScroll, ScrollFling } from '../lib/touch/scroll-planner';
 import { imageFilesFromDataTransfer } from '../lib/terminal-image';
 
 const MOBILE_MAX_WIDTH_PX = 768;
@@ -104,6 +106,18 @@ export function XTermView({
         xterm.loadAddon(fitAddon);
         xterm.open(container);
         fitAddon.fit();
+
+        // WebGL renderer: xterm's default DOM renderer repaints cell-by-cell, which is the
+        // biggest single cost on a phone. Loaded after open() (the addon needs the canvas);
+        // silently keeps the default renderer where WebGL is unavailable or lost.
+        try {
+            const webglAddon = new WebglAddon();
+            webglAddon.onContextLoss(() => webglAddon.dispose());
+            xterm.loadAddon(webglAddon);
+        } catch {
+            /* no WebGL: DOM renderer stays */
+        }
+
         xtermRef.current = xterm;
         fitAddonRef.current = fitAddon;
 
@@ -260,18 +274,103 @@ export function XTermView({
         const dispatchToTerminal = (event: MouseEvent) => {
             xtermRef.current?.element?.dispatchEvent(event);
         };
-        const recognizer = new TouchGestureRecognizer({
-            onScroll: (deltaY, point) => {
+        // 拖动像素先换算成整行再派发：xterm 像素模式对 <50px 的位移打 3 折还会取整，
+        // 触摸的每次小移动几乎全被吞掉（“不跟手”的根因）。行模式没有折扣。
+        // 回溯缓冲直接本地 scrollLines（零延迟）；TUI（备用屏 + 鼠标跟踪）按行发滚轮，
+        // 每个事件正好一个 SGR 滚动 notch。
+        let scrollRemainder = 0;
+        // 返回值表示这次滚动是否真的移动了视口；备用屏（TUI 鼠标跟踪）没有本地边界，恒为 true
+        const applyScrollLines = (lines: number, point: TouchPoint, xterm: XTerm): boolean => {
+            if (xterm.buffer.active.type === 'normal') {
+                const before = xterm.buffer.active.viewportY;
+                xterm.scrollLines(lines);
+                return xterm.buffer.active.viewportY !== before;
+            }
+            const step = lines > 0 ? 1 : -1;
+            for (let i = 0; i < Math.abs(lines); i++) {
                 dispatchToTerminal(
                     new WheelEvent('wheel', {
-                        deltaY,
-                        deltaMode: 0,
+                        deltaY: step,
+                        deltaMode: WheelEvent.DOM_DELTA_LINE,
                         clientX: point.x,
                         clientY: point.y,
                         bubbles: true,
                         cancelable: true,
                     }),
                 );
+            }
+            return true;
+        };
+
+        const cellHeightOf = (xterm: XTerm): number => {
+            const screen = xterm.element?.querySelector<HTMLElement>('.xterm-screen') ?? null;
+            return screen && xterm.rows > 0 ? screen.clientHeight / xterm.rows : 16;
+        };
+
+        const scrollByPixels = (deltaPx: number, point: TouchPoint, xterm: XTerm): boolean => {
+            const plan = planScroll(deltaPx, cellHeightOf(xterm), scrollRemainder);
+            scrollRemainder = plan.remainder;
+            return plan.lines === 0 || applyScrollLines(plan.lines, point, xterm);
+        };
+
+        // 惯性行程：松手后按末速度衰减继续逐帧滚动。用 rAF 而不是定时器，帧间隔就是
+        // 衰减的时间步长，页面不可见时 rAF 自然停摆，回来后不会一次跳很远。
+        let fling: ScrollFling | null = null;
+        let flingHandle: number | null = null;
+        let flingPoint: TouchPoint = { x: 0, y: 0 };
+        let lastFrameMs = 0;
+
+        const stopFling = () => {
+            if (flingHandle !== null) {
+                window.cancelAnimationFrame(flingHandle);
+                flingHandle = null;
+            }
+            fling = null;
+        };
+
+        const stepFling = (now: number) => {
+            flingHandle = null;
+            const active = fling;
+            const xterm = xtermRef.current;
+            if (active === null || xterm === null) {
+                fling = null;
+                return;
+            }
+            // 夹住单帧步长：切后台/掉帧后不要把整段停顿都算成衰减时间，否则会瞬移一大截
+            const deltaPx = active.step(Math.min(now - lastFrameMs, FLING_MAX_FRAME_MS));
+            lastFrameMs = now;
+            if (!scrollByPixels(deltaPx, flingPoint, xterm)) {
+                // 顶到边界：丢掉余量并立即停，速度不再累积，避免“贴边抖动”
+                scrollRemainder = 0;
+                fling = null;
+                return;
+            }
+            if (!active.active) {
+                fling = null;
+                return;
+            }
+            flingHandle = window.requestAnimationFrame(stepFling);
+        };
+
+        const startFling = (velocity: number, point: TouchPoint) => {
+            stopFling();
+            const planner = new ScrollFling(velocity);
+            if (!planner.active) {
+                return;
+            }
+            fling = planner;
+            flingPoint = point;
+            lastFrameMs = performance.now();
+            flingHandle = window.requestAnimationFrame(stepFling);
+        };
+
+        const recognizer = new TouchGestureRecognizer({
+            onScroll: (deltaY, point) => {
+                const xterm = xtermRef.current;
+                if (!xterm) {
+                    return;
+                }
+                scrollByPixels(deltaY, point, xterm);
             },
             // holding a finger is the touch equivalent of a right click, which is how herdr's
             // own right-click handling becomes reachable from a phone
@@ -297,27 +396,47 @@ export function XTermView({
             x: event.touches[0].clientX,
             y: event.touches[0].clientY,
         });
+        let lastPoint: TouchPoint = { x: 0, y: 0 };
         const onTouchStart = (event: TouchEvent) => {
             if (event.touches.length === 1) {
-                recognizer.start(pointOf(event));
+                // 手指重新落下 = 接管滚动，正在跑的惯性立即让位
+                stopFling();
+                scrollRemainder = 0;
+                lastPoint = pointOf(event);
+                recognizer.start(lastPoint);
             }
         };
         const onTouchMove = (event: TouchEvent) => {
             if (event.touches.length !== 1) {
                 return;
             }
-            if (recognizer.move(pointOf(event))) {
+            lastPoint = pointOf(event);
+            if (recognizer.move(lastPoint)) {
                 event.preventDefault();
             }
         };
         // after a hold the browser still emits its compatibility mouse events, which would land
         // a left click on top of the right click we just sent; preventing the touchend default
         // is what suppresses them
-        const onTouchEnd = (event: TouchEvent) => {
-            if (recognizer.didLongPress) {
+        const finishGesture = (event: TouchEvent, allowFling: boolean) => {
+            // didLongPress 在 end() 后会清零，必须在结束手势前读取
+            const didLongPress = recognizer.didLongPress;
+            if (didLongPress) {
                 event.preventDefault();
             }
-            recognizer.end();
+            const velocity = recognizer.end();
+            if (!allowFling || didLongPress) {
+                return;
+            }
+            // 末速度超过阈值才续惯性：点击/长按/慢拖都会得到 0，手势之间不打架
+            startFling(velocity, lastPoint);
+        };
+        const onTouchEnd = (event: TouchEvent) => {
+            finishGesture(event, true);
+        };
+        // touchcancel 是系统抢走了手势（来电、通知下拉），此时继续惯性会“自己滚”，必须停
+        const onTouchCancel = (event: TouchEvent) => {
+            finishGesture(event, false);
         };
         // the native menu would cover the terminal on every right click — on desktop it hides
         // herdr's own right-click handling, and on touch it duplicates the long press we just
@@ -329,14 +448,15 @@ export function XTermView({
         container.addEventListener('touchstart', onTouchStart, { passive: true });
         container.addEventListener('touchmove', onTouchMove, { passive: false });
         container.addEventListener('touchend', onTouchEnd, { passive: false });
-        container.addEventListener('touchcancel', onTouchEnd, { passive: false });
+        container.addEventListener('touchcancel', onTouchCancel, { passive: false });
         container.addEventListener('contextmenu', onContextMenu);
         return () => {
             container.removeEventListener('touchstart', onTouchStart);
             container.removeEventListener('touchmove', onTouchMove);
             container.removeEventListener('touchend', onTouchEnd);
-            container.removeEventListener('touchcancel', onTouchEnd);
+            container.removeEventListener('touchcancel', onTouchCancel);
             container.removeEventListener('contextmenu', onContextMenu);
+            stopFling();
             recognizer.end();
         };
     }, []);

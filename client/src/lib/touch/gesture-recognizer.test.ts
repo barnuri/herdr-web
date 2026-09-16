@@ -99,4 +99,99 @@ describe('TouchGestureRecognizer', () => {
         recognizer.start({ x: 1, y: 1 });
         expect(recognizer.didLongPress).toBe(false);
     });
+
+    it('clears the long-press flag as soon as the gesture ends', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 1, y: 1 });
+        vi.advanceTimersByTime(500);
+        expect(recognizer.didLongPress).toBe(true);
+        recognizer.end();
+        expect(recognizer.didLongPress).toBe(false);
+    });
+});
+
+describe('TouchGestureRecognizer release velocity', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('reports the release velocity of an upward flick', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 0, y: 400 });
+        vi.advanceTimersByTime(50);
+        recognizer.move({ x: 0, y: 380 });
+        vi.advanceTimersByTime(50);
+        recognizer.move({ x: 0, y: 350 });
+        // (400 - 350)px over 100ms
+        expect(recognizer.end()).toBeCloseTo(0.5, 10);
+    });
+
+    it('reports a downward flick as a negative velocity', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 0, y: 300 });
+        vi.advanceTimersByTime(20);
+        recognizer.move({ x: 0, y: 320 });
+        expect(recognizer.end()).toBeCloseTo(-1, 10);
+    });
+
+    it('reports no velocity when the finger pauses before lifting', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 0, y: 400 });
+        vi.advanceTimersByTime(20);
+        recognizer.move({ x: 0, y: 340 });
+        // 300ms pause pushes the moving sample out of the velocity window
+        vi.advanceTimersByTime(300);
+        recognizer.move({ x: 0, y: 340 });
+        expect(recognizer.end()).toBe(0);
+    });
+
+    it('reports no velocity for a tap that never leaves the slop radius', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 0, y: 400 });
+        vi.advanceTimersByTime(30);
+        recognizer.move({ x: 1, y: 401 });
+        expect(recognizer.end()).toBe(0);
+    });
+
+    it('reports no velocity once a long press has fired', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 0, y: 400 });
+        vi.advanceTimersByTime(500);
+        recognizer.move({ x: 0, y: 300 });
+        expect(recognizer.end()).toBe(0);
+    });
+
+    it('reports the flick speed after a stationary pause inside the window', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 0, y: 400 });
+        vi.advanceTimersByTime(300);
+        recognizer.move({ x: 0, y: 400 });
+        vi.advanceTimersByTime(50);
+        recognizer.move({ x: 0, y: 350 });
+        expect(recognizer.end()).toBeCloseTo(1, 10);
+    });
+
+    it('does not leak velocity into the next gesture', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 0, y: 400 });
+        vi.advanceTimersByTime(20);
+        recognizer.move({ x: 0, y: 300 });
+        expect(recognizer.end()).not.toBe(0);
+        recognizer.start({ x: 0, y: 400 });
+        expect(recognizer.end()).toBe(0);
+    });
+
+    it('reports no velocity when the finger stops moving before lifting', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 0, y: 400 });
+        vi.advanceTimersByTime(20);
+        recognizer.move({ x: 0, y: 320 });
+        // no further touchmove while the finger rests, then the lift arrives much later
+        vi.advanceTimersByTime(300);
+        expect(recognizer.end()).toBe(0);
+    });
 });

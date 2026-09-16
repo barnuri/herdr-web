@@ -7,7 +7,8 @@ export interface NotificationContent {
 
 export function formatAgentNotification(event: AgentEvent): NotificationContent {
     const agent = event.agent ?? 'agent';
-    const where = event.title && event.title.length > 0 ? event.title : event.paneId;
+    // 标题和 paneId 都缺失时仍要满足 body: string 的契约，不能让 undefined 流到通知层
+    const where = (event.title && event.title.length > 0 ? event.title : event.paneId) || agent;
     if (event.to === 'blocked') {
         return { title: `${agent} needs attention`, body: where };
     }
@@ -30,7 +31,7 @@ export function browserNotificationSettingsUrl(userAgent: string): string {
 }
 
 export interface NotificationSettingsHelp {
-    readonly platform: 'android' | 'ios' | 'desktop' | 'insecure';
+    readonly platform: 'android' | 'ios' | 'desktop' | 'insecure' | 'webview';
     readonly title: string;
     readonly intentUrl?: string;
     readonly settingsUrl?: string;
@@ -52,6 +53,22 @@ export function insecureContextHelp(httpsUrl: string | null): NotificationSettin
                 ? 'Open the HTTPS version below (with the self-signed certificate: tap Advanced → Proceed, or trust the cert on your device)'
                 : 'Open the HTTPS URL of this server (or a Tailscale/HTTPS proxy) and enable notifications there',
             'Then toggle the bell again from the HTTPS page',
+        ],
+    };
+}
+
+// in-app browsers (the herdr-web Android shell, chat apps, …) embed a WebView
+// that has no Notification API at all: HTTPS and trusted certificates are fine,
+// the API is simply absent. The only fix is the system browser.
+export function webviewHelp(httpsUrl: string): NotificationSettingsHelp {
+    return {
+        platform: 'webview',
+        title: '内置浏览器不支持系统通知',
+        httpsUrl,
+        steps: [
+            '当前页面在 App 的内置浏览器（WebView）里，它没有系统通知能力——与 HTTPS/证书无关',
+            '复制下面的地址，在系统浏览器（Chrome）中打开',
+            '在 Chrome 里点右上角铃铛开启通知；需要常驻可再「添加到主屏幕」当 PWA 用',
         ],
     };
 }
