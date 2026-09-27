@@ -72,19 +72,21 @@ const MODIFIER_KEYS: ReadonlyArray<{ modifier: ArmedModifier; label: string }> =
 
 // what survives a collapse: the keys needed mid-run, taken from the groups above
 // rather than redeclared, so a byte sequence is only ever defined once.
-// ctrl, alt and img stay visible in either state, so they aren't repeated here.
+// ordered like web-terminal's always-visible bar, herdr-only keys trailing.
+// ctrl, alt, img, cam and paste stay visible in either state, so they aren't repeated here.
 const COLLAPSED_KEY_LABELS: readonly string[] = [
-    'prefix',
     'tab',
-    'enter',
+    'esc',
     'ctrl·c',
-    'ctrl·c·c',
     'home',
     'end',
+    '←',
     '↑',
     '↓',
-    '←',
     '→',
+    'ctrl·c·c',
+    'enter',
+    'prefix',
     'F1',
 ];
 const COLLAPSED_KEYS: readonly QuickKey[] = COLLAPSED_KEY_LABELS.map((label) => {
@@ -141,6 +143,17 @@ export function Composer({
         event.target.value = '';
         if (files.length > 0) {
             onImageFiles?.(files);
+        }
+    };
+
+    const onPaste = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (text) {
+                onSendBytes(text);
+            }
+        } catch {
+            // clipboard read denied or unavailable (plain http) — nothing to paste
         }
     };
 
@@ -237,6 +250,16 @@ export function Composer({
                             </button>
                         </>
                     )}
+                    <button
+                        type="button"
+                        className="key-btn"
+                        aria-label="Paste from clipboard"
+                        title="Paste from clipboard"
+                        disabled={disabled}
+                        onClick={() => void onPaste()}
+                    >
+                        paste
+                    </button>
                 </div>
                 {collapsed ? (
                     <div className="key-group">{COLLAPSED_KEYS.map(renderKey)}</div>
