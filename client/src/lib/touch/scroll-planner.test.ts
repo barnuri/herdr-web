@@ -41,7 +41,7 @@ describe('planScroll', () => {
     });
 
     it('keeps the leftover through a stationary move', () => {
-        // 手指停住时浏览器仍会发 touchmove（delta 0），余量不能被当成反向丢掉
+        // the browser still sends touchmove (delta 0) while the finger rests; the remainder must not be dropped as a reversal
         const plan = planScroll(0, 16, 12);
         expect(plan.lines).toBe(0);
         expect(plan.remainder).toBe(12);

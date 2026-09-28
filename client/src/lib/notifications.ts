@@ -7,7 +7,7 @@ export interface NotificationContent {
 
 export function formatAgentNotification(event: AgentEvent): NotificationContent {
     const agent = event.agent ?? 'agent';
-    // 标题和 paneId 都缺失时仍要满足 body: string 的契约，不能让 undefined 流到通知层
+    // with neither a title nor a paneId, body must still be a string: never let undefined reach the notification layer
     const where = (event.title && event.title.length > 0 ? event.title : event.paneId) || agent;
     if (event.to === 'blocked') {
         return { title: `${agent} needs attention`, body: where };
@@ -63,12 +63,12 @@ export function insecureContextHelp(httpsUrl: string | null): NotificationSettin
 export function webviewHelp(httpsUrl: string): NotificationSettingsHelp {
     return {
         platform: 'webview',
-        title: '内置浏览器不支持系统通知',
+        title: 'In-app browsers cannot show system notifications',
         httpsUrl,
         steps: [
-            '当前页面在 App 的内置浏览器（WebView）里，它没有系统通知能力——与 HTTPS/证书无关',
-            '复制下面的地址，在系统浏览器（Chrome）中打开',
-            '在 Chrome 里点右上角铃铛开启通知；需要常驻可再「添加到主屏幕」当 PWA 用',
+            'This page is open in an app\'s built-in browser (WebView), which has no system notifications. This is not an HTTPS or certificate problem',
+            'Copy the address below and open it in your system browser (Chrome)',
+            'In Chrome, tap the bell at the top right to enable notifications. To keep it running, use "Add to Home screen" and open it as a PWA',
         ],
     };
 }

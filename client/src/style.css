@@ -114,13 +114,16 @@ body {
 }
 
 body {
+    overflow: hidden;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
+/* sized from the visual viewport (see useViewportHeight) so the whole UI, footer
+   included, fits above the on-screen keyboard */
 #root {
     display: flex;
     flex-direction: column;
-    height: var(--app-height, 100%);
+    height: calc(var(--app-height, 100dvh) - env(safe-area-inset-top));
 }
 
 /* ---------- top bar ---------- */
@@ -231,7 +234,7 @@ body {
 /* ---------- terminal ---------- */
 .xterm-wrap {
     flex: 1;
-    min-height: max(220px, 35dvh);
+    min-height: 0;
     padding: 6px 4px 0 8px;
     background: var(--bg);
     overflow: hidden;

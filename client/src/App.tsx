@@ -12,6 +12,7 @@ import { quoteShellPath, uploadImage, validateImageFile } from './lib/terminal-i
 import type { NotificationSettingsHelp } from './lib/notifications';
 import { useHerdrSocket } from './hooks/useHerdrSocket';
 import { useNotifications } from './hooks/useNotifications';
+import { useViewportHeight } from './hooks/useViewportHeight';
 import type { Notice } from './components/ToastHost';
 import type { NotificationToggleResult } from './hooks/useNotifications';
 import type { ArmedModifier } from './lib/modifier-keys';
@@ -39,6 +40,7 @@ function initialKeyboardEnabled(): boolean {
 }
 
 export function App() {
+    useViewportHeight();
     const { connected, status, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
     const [stored, setStored] = useState(loadStoredSettings);
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications(stored.allChanges);
@@ -68,26 +70,6 @@ export function App() {
         }
         void notifyForEvent(announced);
     }, [announced, notificationsEnabled, notifyForEvent]);
-
-    // iOS ignores interactive-widget=resizes-content, so track the visual
-    // viewport by hand: the app shrinks and the quick-keys bar rides above the
-    // on-screen keyboard instead of being covered by it
-    useEffect(() => {
-        const viewport = window.visualViewport;
-        if (!viewport) {
-            return;
-        }
-        const apply = () => {
-            // pinch-zoom shrinks visualViewport too (scale != 1) — only the keyboard
-            // shrinks it at scale 1, so gate on scale to leave zoom alone
-            const zoomed = Math.abs(viewport.scale - 1) > 0.01;
-            const keyboardShowing = !zoomed && viewport.height < window.innerHeight - 1;
-            document.documentElement.style.setProperty('--app-height', keyboardShowing ? `${viewport.height}px` : '100%');
-        };
-        viewport.addEventListener('resize', apply);
-        apply();
-        return () => viewport.removeEventListener('resize', apply);
-    }, []);
 
     const showNotice = (text: string, tone: 'info' | 'warn' = 'info') => {
         nextNoticeId += 1;
@@ -147,9 +129,10 @@ export function App() {
             return;
         }
         if (result === 'unsupported') {
-            // a secure context without the Notification API is an in-app WebView
-            // (the Android shell), not a plain-HTTP problem: point at Chrome
-            if (window.isSecureContext && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+            // on Android, a secure context without the Notification API is an in-app WebView
+            // (the Android shell), not a plain-HTTP problem: point at Chrome. Not iOS: Safari
+            // lacks the API outside a home-screen install, and Chrome there lacks it too
+            if (window.isSecureContext && /Android/i.test(navigator.userAgent)) {
                 setHelp(webviewHelp(window.location.href));
                 return;
             }

@@ -16,8 +16,8 @@ export class TouchGestureRecognizer {
 
     private static readonly MOVE_SLOP_PX = 10;
 
-    // 末速度只取最近一小段窗口：手指停住再抬起时，窗口内速度自然归零，
-    // 不会用整段拖动的平均值误触发惯性
+    // release velocity uses only a short recent window: when the finger rests before lifting,
+    // the window velocity drops to zero, so the whole drag's average cannot trigger inertia
     private static readonly VELOCITY_WINDOW_MS = 100;
 
     private static readonly MAX_VELOCITY_SAMPLES = 8;
@@ -75,15 +75,15 @@ export class TouchGestureRecognizer {
     }
 
     /**
-     * 手势结束，返回松手时的末速度（px/ms，正 = 手指上滑 = 看更新的内容）。
-     * 长按（已转成右键）、点击或窗口内没有有效时间跨度时返回 0，调用方据此不启动惯性。
+     * Ends the gesture and returns the release velocity (px/ms, positive = finger moved up = newer content).
+     * Returns 0 for a long press (already turned into a right click), a tap, or a window with no usable time span, so the caller skips inertia.
      */
     end(): number {
         const velocity = this.releaseVelocity();
         this.disarmLongPress();
         this.origin = null;
         this.last = null;
-        // 手势结束后清掉长按标记：didLongPress 只对本手势有效，留着会让外部读到过期状态
+        // clear the long-press flag when the gesture ends: didLongPress only applies to this gesture, and keeping it would expose stale state
         this.pressed = false;
         this.scrolled = false;
         this.samples = [];
@@ -93,8 +93,9 @@ export class TouchGestureRecognizer {
     private record(point: TouchPoint): void {
         const now = Date.now();
         this.samples.push({ t: now, y: point.y });
-        // 按时间窗淘汰：停在原地的那段（浏览器仍会补 touchmove）留在窗口里会把末速度压回 0，
-        // 于是“停住再抬手”不会误触发惯性；重新快速甩动时旧样本又会被清掉。
+        // evict by time window: a resting stretch (the browser still sends touchmove) stays in the
+        // window and pulls release velocity back to 0, so resting then lifting does not trigger
+        // inertia; a new fast fling evicts the old samples again.
         const cutoff = now - TouchGestureRecognizer.VELOCITY_WINDOW_MS;
         this.samples = this.samples.filter((sample) => sample.t >= cutoff);
         if (this.samples.length > TouchGestureRecognizer.MAX_VELOCITY_SAMPLES) {
@@ -108,8 +109,9 @@ export class TouchGestureRecognizer {
         }
         const first = this.samples[0];
         const last = this.samples[this.samples.length - 1];
-        // 手指停住时浏览器基本不再发 touchmove，最后一次移动离抬手太久就说明早已停下，
-        // 不能把旧样本的速度当成末速度，否则“甩一下再按住抬手”会莫名续滑
+        // while the finger rests the browser mostly stops sending touchmove; if the last move is
+        // long before release, the finger had already stopped, so old samples must not count as
+        // release velocity, or a fling followed by a hold and lift would keep sliding
         if (Date.now() - last.t > TouchGestureRecognizer.VELOCITY_WINDOW_MS) {
             return 0;
         }

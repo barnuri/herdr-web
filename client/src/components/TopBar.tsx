@@ -11,10 +11,10 @@ interface TopBarProps {
 }
 
 const STATUS_TEXT: Readonly<Record<ConnectionState, string>> = {
-    connecting: '连接中…',
-    open: '已连接',
-    reconnecting: '连接断开，正在重连…',
-    failed: '连接失败，请手动刷新',
+    connecting: 'Connecting…',
+    open: 'Connected',
+    reconnecting: 'Connection lost, reconnecting…',
+    failed: 'Connection failed, please refresh the page',
 };
 
 const STATUS_COLOR: Readonly<Record<ConnectionState, string>> = {

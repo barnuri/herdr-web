@@ -56,7 +56,7 @@ export function NotificationHelp({ help, onClose }: NotificationHelpProps) {
                 {help.platform === 'webview' && help.httpsUrl && (
                     <>
                         <button type="button" className="sheet-btn sheet-btn-primary" onClick={() => void copyUrl(help.httpsUrl)}>
-                            {copied ? '已复制 — 粘贴到 Chrome 打开' : '复制页面地址'}
+                            {copied ? 'Copied — paste it in Chrome' : 'Copy page address'}
                         </button>
                         <p className="help-url">{help.httpsUrl}</p>
                     </>

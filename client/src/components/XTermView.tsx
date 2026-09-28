@@ -274,12 +274,13 @@ export function XTermView({
         const dispatchToTerminal = (event: MouseEvent) => {
             xtermRef.current?.element?.dispatchEvent(event);
         };
-        // 拖动像素先换算成整行再派发：xterm 像素模式对 <50px 的位移打 3 折还会取整，
-        // 触摸的每次小移动几乎全被吞掉（“不跟手”的根因）。行模式没有折扣。
-        // 回溯缓冲直接本地 scrollLines（零延迟）；TUI（备用屏 + 鼠标跟踪）按行发滚轮，
-        // 每个事件正好一个 SGR 滚动 notch。
+        // Convert drag pixels to whole lines before dispatching: xterm's pixel mode scales
+        // moves under 50px to 30% and then rounds, so almost every small touch move is lost
+        // (the root cause of scrolling that lags the finger). Line mode has no scaling.
+        // Scrollback scrolls locally via scrollLines (no latency); a TUI (alternate screen +
+        // mouse tracking) gets line wheel events, exactly one SGR scroll notch per event.
         let scrollRemainder = 0;
-        // 返回值表示这次滚动是否真的移动了视口；备用屏（TUI 鼠标跟踪）没有本地边界，恒为 true
+        // returns whether this scroll actually moved the viewport; the alternate screen (TUI mouse tracking) has no local bounds, so it is always true
         const applyScrollLines = (lines: number, point: TouchPoint, xterm: XTerm): boolean => {
             if (xterm.buffer.active.type === 'normal') {
                 const before = xterm.buffer.active.viewportY;
@@ -313,8 +314,9 @@ export function XTermView({
             return plan.lines === 0 || applyScrollLines(plan.lines, point, xterm);
         };
 
-        // 惯性行程：松手后按末速度衰减继续逐帧滚动。用 rAF 而不是定时器，帧间隔就是
-        // 衰减的时间步长，页面不可见时 rAF 自然停摆，回来后不会一次跳很远。
+        // Inertia: after release, keep scrolling frame by frame while the release velocity decays.
+        // rAF instead of a timer: the frame interval is the decay time step, and rAF pauses
+        // while the page is hidden, so it does not jump far when the page comes back.
         let fling: ScrollFling | null = null;
         let flingHandle: number | null = null;
         let flingPoint: TouchPoint = { x: 0, y: 0 };
@@ -336,11 +338,11 @@ export function XTermView({
                 fling = null;
                 return;
             }
-            // 夹住单帧步长：切后台/掉帧后不要把整段停顿都算成衰减时间，否则会瞬移一大截
+            // clamp the per-frame step: after backgrounding or dropped frames, do not count the whole pause as decay time, or it jumps a long way
             const deltaPx = active.step(Math.min(now - lastFrameMs, FLING_MAX_FRAME_MS));
             lastFrameMs = now;
             if (!scrollByPixels(deltaPx, flingPoint, xterm)) {
-                // 顶到边界：丢掉余量并立即停，速度不再累积，避免“贴边抖动”
+                // hit a bound: drop the remainder and stop now so velocity does not build up and jitter at the edge
                 scrollRemainder = 0;
                 fling = null;
                 return;
@@ -399,7 +401,7 @@ export function XTermView({
         let lastPoint: TouchPoint = { x: 0, y: 0 };
         const onTouchStart = (event: TouchEvent) => {
             if (event.touches.length === 1) {
-                // 手指重新落下 = 接管滚动，正在跑的惯性立即让位
+                // a finger touching down again takes over scrolling: running inertia stops immediately
                 stopFling();
                 scrollRemainder = 0;
                 lastPoint = pointOf(event);
@@ -419,7 +421,7 @@ export function XTermView({
         // a left click on top of the right click we just sent; preventing the touchend default
         // is what suppresses them
         const finishGesture = (event: TouchEvent, allowFling: boolean) => {
-            // didLongPress 在 end() 后会清零，必须在结束手势前读取
+            // didLongPress is cleared by end(), so read it before ending the gesture
             const didLongPress = recognizer.didLongPress;
             if (didLongPress) {
                 event.preventDefault();
@@ -428,13 +430,13 @@ export function XTermView({
             if (!allowFling || didLongPress) {
                 return;
             }
-            // 末速度超过阈值才续惯性：点击/长按/慢拖都会得到 0，手势之间不打架
+            // only continue with inertia above the velocity threshold: taps, long presses and slow drags all give 0, so gestures do not conflict
             startFling(velocity, lastPoint);
         };
         const onTouchEnd = (event: TouchEvent) => {
             finishGesture(event, true);
         };
-        // touchcancel 是系统抢走了手势（来电、通知下拉），此时继续惯性会“自己滚”，必须停
+        // touchcancel means the system took the gesture (incoming call, notification shade); continuing inertia would scroll on its own, so stop
         const onTouchCancel = (event: TouchEvent) => {
             finishGesture(event, false);
         };
