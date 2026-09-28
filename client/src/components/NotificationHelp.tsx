@@ -14,12 +14,12 @@ export function NotificationHelp({ help, onClose }: NotificationHelpProps) {
         return null;
     }
 
-    const copySettingsUrl = async () => {
-        if (!help.settingsUrl) {
+    const copyUrl = async (value?: string) => {
+        if (!value) {
             return;
         }
         try {
-            await navigator.clipboard.writeText(help.settingsUrl);
+            await navigator.clipboard.writeText(value);
             setCopied(true);
         } catch {}
     };
@@ -49,9 +49,17 @@ export function NotificationHelp({ help, onClose }: NotificationHelpProps) {
                     </a>
                 )}
                 {help.platform === 'desktop' && help.settingsUrl && (
-                    <button type="button" className="sheet-btn sheet-btn-primary" onClick={() => void copySettingsUrl()}>
+                    <button type="button" className="sheet-btn sheet-btn-primary" onClick={() => void copyUrl(help.settingsUrl)}>
                         {copied ? 'Copied — paste it in a new tab' : `Copy ${help.settingsUrl}`}
                     </button>
+                )}
+                {help.platform === 'webview' && help.httpsUrl && (
+                    <>
+                        <button type="button" className="sheet-btn sheet-btn-primary" onClick={() => void copyUrl(help.httpsUrl)}>
+                            {copied ? 'Copied — paste it in Chrome' : 'Copy page address'}
+                        </button>
+                        <p className="help-url">{help.httpsUrl}</p>
+                    </>
                 )}
                 <button type="button" className="sheet-btn" onClick={onClose}>
                     Close

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HerdrSocket } from '../lib/ws-client';
+import type { ConnectionState } from '../lib/ws-client';
 import type { AgentEvent, ClientMessage, HerdrPane, HerdrWorkspace, ServerMessage } from '../types';
 
 export type TerminalMessage = { type: 'output'; data: string } | { type: 'exit'; code: number };
 
 export interface HerdrState {
     readonly connected: boolean;
+    readonly status: ConnectionState;
     readonly workspaces: HerdrWorkspace[];
     readonly panes: HerdrPane[];
     readonly lastEvent: AgentEvent | null;
@@ -16,6 +18,7 @@ export interface HerdrState {
 
 export function useHerdrSocket(): HerdrState {
     const [connected, setConnected] = useState(false);
+    const [status, setStatus] = useState<ConnectionState>('connecting');
     const [workspaces, setWorkspaces] = useState<HerdrWorkspace[]>([]);
     const [panes, setPanes] = useState<HerdrPane[]>([]);
     const [lastEvent, setLastEvent] = useState<AgentEvent | null>(null);
@@ -47,10 +50,27 @@ export function useHerdrSocket(): HerdrState {
                 setLastError(message.message);
             },
             setConnected,
+            (next: ConnectionState) => setStatus(next),
         );
         socketRef.current = socket;
+
+        // Backoff is paused while the tab is hidden so we don't hammer a dead
+        // network, and the moment the user returns we retry right away.
+        const onVisibilityChange = () => {
+            if (document.visibilityState === 'hidden') {
+                socket.pauseReconnect();
+            } else {
+                socket.resumeReconnect();
+            }
+        };
+        document.addEventListener('visibilitychange', onVisibilityChange);
+
         socket.connect();
-        return () => socket.close();
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibilityChange);
+            socketRef.current = null;
+            socket.close();
+        };
     }, []);
 
     const send = useCallback((message: ClientMessage) => {
@@ -64,5 +84,5 @@ export function useHerdrSocket(): HerdrState {
         };
     }, []);
 
-    return { connected, workspaces, panes, lastEvent, lastError, send, subscribeTerminal };
+    return { connected, status, workspaces, panes, lastEvent, lastError, send, subscribeTerminal };
 }
