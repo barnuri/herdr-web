@@ -1,29 +1,39 @@
 import { useEffect } from 'react';
+import { nextViewportLayout, type ViewportLayout } from '../lib/viewport-offset';
 
 /**
- * Keeps the `--app-height` CSS custom property in sync with the visual viewport
- * height. The visual viewport shrinks when the on-screen keyboard opens, so
- * sizing the app from it (instead of `vh`/`dvh`) keeps the whole UI inside the
- * area above the keyboard — including mobile "Request Desktop Site" mode, where
+ * Keeps `--app-height` at the keyboard-closed height and `--keyboard-offset` at how far the
+ * app must slide up to keep its bottom above the on-screen keyboard. Sizing from the visual
+ * viewport (instead of `vh`/`dvh`) also covers mobile "Request Desktop Site" mode, where
  * `vh`/`dvh` stay locked to the full page height.
  */
 export function useViewportHeight(): void {
     useEffect(() => {
         const viewport = window.visualViewport;
+        const rootStyle = document.documentElement.style;
+        let layout: ViewportLayout | null = null;
         let frame = 0;
 
-        const applyHeight = (): void => {
+        const applyLayout = (): void => {
             frame = 0;
-            const height = viewport?.height ?? window.innerHeight;
-            document.documentElement.style.setProperty('--app-height', `${Math.round(height)}px`);
+            layout = nextViewportLayout(
+                {
+                    width: Math.round(viewport?.width ?? window.innerWidth),
+                    height: Math.round(viewport?.height ?? window.innerHeight),
+                    offsetTop: Math.round(viewport?.offsetTop ?? 0),
+                },
+                layout,
+            );
+            rootStyle.setProperty('--app-height', `${layout.fullHeight}px`);
+            rootStyle.setProperty('--keyboard-offset', `${layout.keyboardOffset}px`);
         };
 
         const scheduleUpdate = (): void => {
             if (frame !== 0) { return; }
-            frame = window.requestAnimationFrame(applyHeight);
+            frame = window.requestAnimationFrame(applyLayout);
         };
 
-        applyHeight();
+        applyLayout();
 
         viewport?.addEventListener('resize', scheduleUpdate);
         viewport?.addEventListener('scroll', scheduleUpdate);

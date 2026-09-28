@@ -118,12 +118,13 @@ body {
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
-/* sized from the visual viewport (see useViewportHeight) so the whole UI, footer
-   included, fits above the on-screen keyboard */
+/* keeps its keyboard-closed height and slides up above the on-screen keyboard instead of
+   shrinking, so the terminal never reflows (see useViewportHeight) */
 #root {
     display: flex;
     flex-direction: column;
     height: calc(var(--app-height, 100dvh) - env(safe-area-inset-top));
+    transform: translateY(calc(-1 * var(--keyboard-offset, 0px)));
 }
 
 /* ---------- top bar ---------- */
@@ -238,7 +239,7 @@ body {
     padding: 6px 4px 0 8px;
     background: var(--bg);
     overflow: hidden;
-    touch-action: pan-y pinch-zoom;
+    touch-action: pan-y;
     /* a hold is forwarded to herdr as a right click, so iOS must not raise its own callout */
     -webkit-touch-callout: none;
 }
