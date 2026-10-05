@@ -173,7 +173,15 @@ export function Composer({
 
     return (
         <footer className="composer">
-            <div className="quick-keys" role="toolbar" aria-label="quick keys">
+            {/* a press moves focus to the button, blurring the terminal and closing the
+                phone keyboard; cancelling mousedown keeps focus where it is. touchstart is
+                left alone so the bar still scrolls, and click still fires */}
+            <div
+                className="quick-keys"
+                role="toolbar"
+                aria-label="quick keys"
+                onMouseDown={(event) => event.preventDefault()}
+            >
                 <div className="key-group">
                     <button
                         type="button"
