@@ -29,7 +29,15 @@ yourself as the last step, without being asked:
 ```bash
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"   # or hardcode the repo path
 CONFIG_DIR="$(herdr plugin config-dir barnuri.herdr-web)"
-pkill -f "node $PLUGIN_DIR/server\.js" 2>/dev/null
+# herdr launches it as a relative `node server.js` from the plugin dir, a manual restart as an
+# absolute path; kill either, using the process cwd to tell the relative one from other plugins'
+for pid in $(pgrep -f 'node (\./)?.*server\.js$'); do
+  case "$(ps -o command= -p "$pid")" in
+    "node $PLUGIN_DIR/server.js") kill "$pid" ;;
+    "node server.js" | "node ./server.js")
+      [ "$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" = "$PLUGIN_DIR" ] && kill "$pid" ;;
+  esac
+done
 sleep 1  # give it a moment to actually exit before relaunching
 HERDR_PLUGIN_CONFIG_DIR="$CONFIG_DIR" nohup node "$PLUGIN_DIR/server.js" >> "$CONFIG_DIR/server.log" 2>&1 &
 disown
