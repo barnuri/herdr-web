@@ -3,7 +3,10 @@ import { HerdrSocket } from '../lib/ws-client';
 import type { ConnectionState } from '../lib/ws-client';
 import type { AgentEvent, ClientMessage, HerdrPane, HerdrWorkspace, ServerMessage } from '../types';
 
-export type TerminalMessage = { type: 'output'; data: string } | { type: 'exit'; code: number };
+export type TerminalMessage =
+    | { type: 'output'; data: string }
+    | { type: 'exit'; code: number }
+    | { type: 'clipboard'; text: string };
 
 export interface HerdrState {
     readonly connected: boolean;
@@ -32,7 +35,7 @@ export function useHerdrSocket(): HerdrState {
         const socket = new HerdrSocket(
             url,
             (message: ServerMessage) => {
-                if (message.type === 'output' || message.type === 'exit') {
+                if (message.type === 'output' || message.type === 'exit' || message.type === 'clipboard') {
                     for (const handler of terminalHandlersRef.current) {
                         handler(message);
                     }

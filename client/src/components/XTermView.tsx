@@ -26,6 +26,8 @@ const LEFT_MOUSE_BUTTONS_MASK = 1;
 const RIGHT_MOUSE_BUTTON = 2;
 const RIGHT_MOUSE_BUTTONS_MASK = 2;
 const LONG_PRESS_HAPTIC_MS = 15;
+const SELECTION_COPY_DELAY_MS = 150;
+const MOUSE_DRAG_MIN_PX = 4;
 
 // herdr transmits terminal-browser frames as raw RGBA (kitty graphics f=32)
 async function decodeRgbaFrame(
@@ -206,6 +208,10 @@ export function XTermView({
                 writeWithGraphics(message.data);
                 return;
             }
+            if (message.type === 'clipboard') {
+                onCopyTextRef.current?.(message.text);
+                return;
+            }
             xterm.write(`\r\n\x1b[2m[herdr exited with code ${message.code} — reconnecting will restart it]\x1b[0m\r\n`);
             startedRef.current = false;
         });
@@ -290,6 +296,11 @@ export function XTermView({
 
         const dispatchToTerminal = (event: MouseEvent) => {
             xtermRef.current?.element?.dispatchEvent(event);
+        };
+        // herdr copies a selection into the clipboard of the machine it runs on, so after a
+        // drag ends the server reads that clipboard back and sends it here
+        const requestSelectionCopy = () => {
+            window.setTimeout(() => send({ type: 'read_clipboard' }), SELECTION_COPY_DELAY_MS);
         };
         const dispatchMouse = (type: 'mousedown' | 'mousemove' | 'mouseup', button: number, point: TouchPoint) => {
             const buttonMask = button === LEFT_MOUSE_BUTTON ? LEFT_MOUSE_BUTTONS_MASK : RIGHT_MOUSE_BUTTONS_MASK;
@@ -446,6 +457,9 @@ export function XTermView({
             if (didLongPress) {
                 event.preventDefault();
                 dispatchMouse('mouseup', LEFT_MOUSE_BUTTON, lastPoint);
+                if (didDrag) {
+                    requestSelectionCopy();
+                }
                 // a hold that never moved is a plain long press: also open herdr's right-click menu
                 if (allowFling && !didDrag) {
                     dispatchMouse('mousedown', RIGHT_MOUSE_BUTTON, lastPoint);
@@ -473,12 +487,27 @@ export function XTermView({
             event.preventDefault();
         };
 
+        let mouseDownPoint: TouchPoint | null = null;
+        const onMouseDown = (event: MouseEvent) => {
+            mouseDownPoint = event.isTrusted && event.button === LEFT_MOUSE_BUTTON ? { x: event.clientX, y: event.clientY } : null;
+        };
+        const onMouseUp = (event: MouseEvent) => {
+            const start = mouseDownPoint;
+            mouseDownPoint = null;
+            if (start !== null && event.isTrusted && Math.hypot(event.clientX - start.x, event.clientY - start.y) > MOUSE_DRAG_MIN_PX) {
+                requestSelectionCopy();
+            }
+        };
+        container.addEventListener('mousedown', onMouseDown);
+        container.addEventListener('mouseup', onMouseUp);
         container.addEventListener('touchstart', onTouchStart, { passive: true });
         container.addEventListener('touchmove', onTouchMove, { passive: false });
         container.addEventListener('touchend', onTouchEnd, { passive: false });
         container.addEventListener('touchcancel', onTouchCancel, { passive: false });
         container.addEventListener('contextmenu', onContextMenu);
         return () => {
+            container.removeEventListener('mousedown', onMouseDown);
+            container.removeEventListener('mouseup', onMouseUp);
             container.removeEventListener('touchstart', onTouchStart);
             container.removeEventListener('touchmove', onTouchMove);
             container.removeEventListener('touchend', onTouchEnd);

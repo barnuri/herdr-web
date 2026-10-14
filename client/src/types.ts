@@ -32,6 +32,7 @@ export type ServerMessage =
     | { type: 'topology'; workspaces: HerdrWorkspace[]; panes: HerdrPane[] }
     | { type: 'output'; data: string }
     | { type: 'exit'; code: number }
+    | { type: 'clipboard'; text: string }
     | { type: 'agent_event'; event: AgentEvent }
     | { type: 'error'; message: string };
 
@@ -39,4 +40,5 @@ export type ClientMessage =
     | { type: 'start'; cols: number; rows: number }
     | { type: 'input'; data: string }
     | { type: 'resize'; cols: number; rows: number }
-    | { type: 'refresh_topology' };
+    | { type: 'refresh_topology' }
+    | { type: 'read_clipboard' };

@@ -13,6 +13,7 @@ const herdr = require('./lib/herdr');
 const { PtySession } = require('./lib/pty-session');
 const { ImageStore } = require('./lib/image-store');
 const { PushService } = require('./lib/push-service');
+const { SystemClipboard } = require('./lib/system-clipboard');
 const { StateWatcher } = require('./lib/state-watcher');
 
 class HerdrWebServer {
@@ -340,11 +341,22 @@ class HerdrWebServer {
             this.ptyBySocket.get(socket)?.resize(message.cols, message.rows);
             return;
         }
+        if (type === 'read_clipboard') {
+            void this.sendClipboard(socket);
+            return;
+        }
         if (type === 'refresh_topology') {
             this.pollTopology();
             return;
         }
         this.send(socket, { type: 'error', message: `unknown message type: ${String(type)}` });
+    }
+
+    async sendClipboard(socket) {
+        const text = await SystemClipboard.read();
+        if (text !== null) {
+            this.send(socket, { type: 'clipboard', text });
+        }
     }
 
     // each browser client gets its own PTY attached to the herdr TUI, exactly
