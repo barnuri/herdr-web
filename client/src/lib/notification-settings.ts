@@ -15,10 +15,9 @@ export interface NotificationSettings {
 export const TOASTS_STORAGE_KEY = 'herdr-web:toasts-enabled';
 export const ALL_CHANGES_STORAGE_KEY = 'herdr-web:notify-all-changes';
 
-// Toasts on, but quiet: a working -> idle -> working agent used to produce a
-// banner per hop, which reads as noise next to the states the strip already shows.
+// Everything off until the user opts in from settings.
 export const DEFAULT_SETTINGS: NotificationSettings = {
-    toasts: true,
+    toasts: false,
     device: false,
     allChanges: false,
 };
