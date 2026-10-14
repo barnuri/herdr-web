@@ -426,6 +426,46 @@ input:focus-visible,
     border-left-color: var(--idle);
 }
 
+/* ---------- copy bar: herdr's copy waiting for a tap (plain http blocks silent clipboard writes) ---------- */
+.copy-bar {
+    position: fixed;
+    left: 50%;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    z-index: 11;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: min(92vw, 420px);
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--panel-raised);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: var(--font-sm);
+    box-shadow: var(--shadow);
+}
+
+.copy-bar-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.copy-bar button {
+    min-width: 44px;
+    min-height: 44px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+}
+
 /* wider screens: cap content width, keep the phone feel */
 /* desktop: single column, larger type */
 @media (min-width: 900px) {

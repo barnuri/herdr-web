@@ -8,10 +8,12 @@ import { NotificationHelp } from './components/NotificationHelp';
 import { insecureContextHelp, notificationSettingsHelp, untrustedCertHelp, webviewHelp } from './lib/notifications';
 import { ALL_CHANGES_STORAGE_KEY, TOASTS_STORAGE_KEY, loadStoredSettings, shouldAnnounce } from './lib/notification-settings';
 import type { NotificationSettings } from './lib/notification-settings';
+import { copyText } from './lib/clipboard';
 import { quoteShellPath, uploadImage, validateImageFile } from './lib/terminal-image';
 import type { NotificationSettingsHelp } from './lib/notifications';
 import { useHerdrSocket } from './hooks/useHerdrSocket';
 import { useNotifications } from './hooks/useNotifications';
+import { useReloadOnNewBuild } from './hooks/useReloadOnNewBuild';
 import { useViewportHeight } from './hooks/useViewportHeight';
 import type { Notice } from './components/ToastHost';
 import type { NotificationToggleResult } from './hooks/useNotifications';
@@ -42,6 +44,7 @@ function initialKeyboardEnabled(): boolean {
 export function App() {
     useViewportHeight();
     const { connected, status, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
+    useReloadOnNewBuild(connected);
     const [stored, setStored] = useState(loadStoredSettings);
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications(stored.allChanges);
     const [notice, setNotice] = useState<Notice | null>(null);
@@ -49,6 +52,8 @@ export function App() {
     const [armedModifier, setArmedModifier] = useState<ArmedModifier | null>(null);
     const [uploadingImage, setUploadingImage] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    // text herdr copied that the browser refused to write without a tap (plain http)
+    const [pendingCopy, setPendingCopy] = useState<string | null>(null);
 
     useEffect(() => {
         localStorage.setItem(KEYBOARD_STORAGE_KEY, String(keyboardEnabled));
@@ -74,6 +79,15 @@ export function App() {
     const showNotice = (text: string, tone: 'info' | 'warn' = 'info') => {
         nextNoticeId += 1;
         setNotice({ id: nextNoticeId, text, tone });
+    };
+
+    const onCopyText = async (text: string) => {
+        if (await copyText(text)) {
+            setPendingCopy(null);
+            showNotice('Copied');
+            return;
+        }
+        setPendingCopy(text);
     };
 
     // An agent reads an image from disk, so the file is uploaded into the focused pane's
@@ -166,7 +180,19 @@ export function App() {
                 send={send}
                 subscribeTerminal={subscribeTerminal}
                 onImageFiles={(files) => void onImageFiles(files)}
+                onCopyText={(text) => void onCopyText(text)}
             />
+            {pendingCopy !== null && (
+                <div className="copy-bar">
+                    <span className="copy-bar-text">{pendingCopy}</span>
+                    <button type="button" onClick={() => void onCopyText(pendingCopy)}>
+                        Copy
+                    </button>
+                    <button type="button" aria-label="Dismiss" onClick={() => setPendingCopy(null)}>
+                        ✕
+                    </button>
+                </div>
+            )}
             <Composer
                 disabled={!connected}
                 keyboardEnabled={keyboardEnabled}

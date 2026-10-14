@@ -4,7 +4,13 @@ import { TouchGestureRecognizer } from './gesture-recognizer';
 function build() {
     const onScroll = vi.fn();
     const onLongPress = vi.fn();
-    return { recognizer: new TouchGestureRecognizer({ onScroll, onLongPress }), onScroll, onLongPress };
+    const onLongPressMove = vi.fn();
+    return {
+        recognizer: new TouchGestureRecognizer({ onScroll, onLongPress, onLongPressMove }),
+        onScroll,
+        onLongPress,
+        onLongPressMove,
+    };
 }
 
 describe('TouchGestureRecognizer', () => {
@@ -75,6 +81,32 @@ describe('TouchGestureRecognizer', () => {
         vi.advanceTimersByTime(500);
         expect(recognizer.move({ x: 100, y: 340 })).toBe(true);
         expect(onScroll).not.toHaveBeenCalled();
+    });
+
+    it('reports every move after the hold so the press can follow the finger', () => {
+        const { recognizer, onLongPressMove } = build();
+        recognizer.start({ x: 100, y: 400 });
+        vi.advanceTimersByTime(500);
+        recognizer.move({ x: 140, y: 400 });
+        expect(onLongPressMove).toHaveBeenCalledWith({ x: 140, y: 400 });
+        expect(recognizer.didDragAfterLongPress).toBe(true);
+    });
+
+    it('does not count jitter inside the slop as a drag after the hold', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 100, y: 400 });
+        vi.advanceTimersByTime(500);
+        recognizer.move({ x: 103, y: 402 });
+        expect(recognizer.didDragAfterLongPress).toBe(false);
+    });
+
+    it('clears the drag flag when the gesture ends', () => {
+        const { recognizer } = build();
+        recognizer.start({ x: 100, y: 400 });
+        vi.advanceTimersByTime(500);
+        recognizer.move({ x: 160, y: 400 });
+        recognizer.end();
+        expect(recognizer.didDragAfterLongPress).toBe(false);
     });
 
     it('cancels a pending long press when the finger lifts', () => {

@@ -15,11 +15,14 @@ import type { KittyBitmap } from '../lib/kitty/types';
 import { TouchGestureRecognizer, type TouchPoint } from '../lib/touch/gesture-recognizer';
 import { FLING_MAX_FRAME_MS, planScroll, ScrollFling } from '../lib/touch/scroll-planner';
 import { imageFilesFromDataTransfer } from '../lib/terminal-image';
+import { parseOsc52 } from '../lib/clipboard';
 
 const MOBILE_MAX_WIDTH_PX = 768;
 const MOBILE_FONT_SIZE = 12;
 const DESKTOP_FONT_SIZE = 14;
 const RESIZE_DEBOUNCE_MS = 150;
+const LEFT_MOUSE_BUTTON = 0;
+const LEFT_MOUSE_BUTTONS_MASK = 1;
 const RIGHT_MOUSE_BUTTON = 2;
 const RIGHT_MOUSE_BUTTONS_MASK = 2;
 const LONG_PRESS_HAPTIC_MS = 15;
@@ -57,6 +60,8 @@ interface XTermViewProps {
     readonly subscribeTerminal: (handler: (message: TerminalMessage) => void) => () => void;
     /** Images pasted into, or dropped onto, the terminal. Omit to ignore both. */
     readonly onImageFiles?: (files: File[]) => void;
+    /** Text herdr copied via OSC 52 (what iTerm/Ghostty write to the system clipboard). */
+    readonly onCopyText?: (text: string) => void;
 }
 
 export function XTermView({
@@ -67,10 +72,13 @@ export function XTermView({
     send,
     subscribeTerminal,
     onImageFiles,
+    onCopyText,
 }: XTermViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const onImageFilesRef = useRef(onImageFiles);
     onImageFilesRef.current = onImageFiles;
+    const onCopyTextRef = useRef(onCopyText);
+    onCopyTextRef.current = onCopyText;
     const xtermRef = useRef<XTerm | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
     const startedRef = useRef(false);
@@ -104,6 +112,14 @@ export function XTermView({
         });
         const fitAddon = new FitAddon();
         xterm.loadAddon(fitAddon);
+        // herdr owns the mouse and the selection, so its copy only reaches us as OSC 52
+        const oscCopyDisposable = xterm.parser.registerOscHandler(52, (data) => {
+            const text = parseOsc52(data);
+            if (text !== null) {
+                onCopyTextRef.current?.(text);
+            }
+            return true;
+        });
         xterm.open(container);
         fitAddon.fit();
 
@@ -215,6 +231,7 @@ export function XTermView({
                 window.cancelAnimationFrame(redrawHandle);
             }
             unsubscribe();
+            oscCopyDisposable.dispose();
             inputDisposable.dispose();
             renderDisposable.dispose();
             scrollDisposable.dispose();
@@ -273,6 +290,19 @@ export function XTermView({
 
         const dispatchToTerminal = (event: MouseEvent) => {
             xtermRef.current?.element?.dispatchEvent(event);
+        };
+        const dispatchMouse = (type: 'mousedown' | 'mousemove' | 'mouseup', button: number, point: TouchPoint) => {
+            const buttonMask = button === LEFT_MOUSE_BUTTON ? LEFT_MOUSE_BUTTONS_MASK : RIGHT_MOUSE_BUTTONS_MASK;
+            dispatchToTerminal(
+                new MouseEvent(type, {
+                    button,
+                    buttons: type === 'mouseup' ? 0 : buttonMask,
+                    clientX: point.x,
+                    clientY: point.y,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            );
         };
         // Convert drag pixels to whole lines before dispatching: xterm's pixel mode scales
         // moves under 50px to 30% and then rounds, so almost every small touch move is lost
@@ -374,24 +404,14 @@ export function XTermView({
                 }
                 scrollByPixels(deltaY, point, xterm);
             },
-            // holding a finger is the touch equivalent of a right click, which is how herdr's
-            // own right-click handling becomes reachable from a phone
+            // holding a finger presses the left button so herdr starts its own selection;
+            // dragging extends it and lifting ends it, which makes herdr copy via OSC 52
             onLongPress: (point) => {
                 // the hold threshold is invisible, so confirm it the way a native long press does
                 navigator.vibrate?.(LONG_PRESS_HAPTIC_MS);
-                for (const type of ['mousedown', 'mouseup'] as const) {
-                    dispatchToTerminal(
-                        new MouseEvent(type, {
-                            button: RIGHT_MOUSE_BUTTON,
-                            buttons: type === 'mousedown' ? RIGHT_MOUSE_BUTTONS_MASK : 0,
-                            clientX: point.x,
-                            clientY: point.y,
-                            bubbles: true,
-                            cancelable: true,
-                        }),
-                    );
-                }
+                dispatchMouse('mousedown', LEFT_MOUSE_BUTTON, point);
             },
+            onLongPressMove: (point) => dispatchMouse('mousemove', LEFT_MOUSE_BUTTON, point),
         });
 
         const pointOf = (event: TouchEvent): TouchPoint => ({
@@ -418,13 +438,19 @@ export function XTermView({
             }
         };
         // after a hold the browser still emits its compatibility mouse events, which would land
-        // a left click on top of the right click we just sent; preventing the touchend default
-        // is what suppresses them
+        // an extra click on top of the ones we sent; preventing the touchend default suppresses them
         const finishGesture = (event: TouchEvent, allowFling: boolean) => {
-            // didLongPress is cleared by end(), so read it before ending the gesture
+            // both flags are cleared by end(), so read them before ending the gesture
             const didLongPress = recognizer.didLongPress;
+            const didDrag = recognizer.didDragAfterLongPress;
             if (didLongPress) {
                 event.preventDefault();
+                dispatchMouse('mouseup', LEFT_MOUSE_BUTTON, lastPoint);
+                // a hold that never moved is a plain long press: also open herdr's right-click menu
+                if (allowFling && !didDrag) {
+                    dispatchMouse('mousedown', RIGHT_MOUSE_BUTTON, lastPoint);
+                    dispatchMouse('mouseup', RIGHT_MOUSE_BUTTON, lastPoint);
+                }
             }
             const velocity = recognizer.end();
             if (!allowFling || didLongPress) {

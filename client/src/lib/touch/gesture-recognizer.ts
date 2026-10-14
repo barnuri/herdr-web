@@ -6,10 +6,11 @@ export interface TouchPoint {
 export interface TouchGestureHandlers {
     readonly onScroll: (deltaY: number, point: TouchPoint) => void;
     readonly onLongPress: (point: TouchPoint) => void;
+    readonly onLongPressMove?: (point: TouchPoint) => void;
 }
 
 // arbitrates the two single-finger gestures the terminal supports: a drag scrolls, and a
-// stationary hold is the touch equivalent of a right click. Kept free of DOM types so the
+// hold starts a press that follows the finger until it lifts. Kept free of DOM types so the
 // thresholds and the scroll-vs-press decision stay unit-testable.
 export class TouchGestureRecognizer {
     private static readonly LONG_PRESS_MS = 500;
@@ -32,6 +33,8 @@ export class TouchGestureRecognizer {
 
     private scrolled = false;
 
+    private pressDragged = false;
+
     private samples: { readonly t: number; readonly y: number }[] = [];
 
     constructor(private readonly handlers: TouchGestureHandlers) {}
@@ -41,10 +44,16 @@ export class TouchGestureRecognizer {
         return this.pressed;
     }
 
+    // true once the finger travelled beyond the slop while held, i.e. the hold became a drag
+    get didDragAfterLongPress(): boolean {
+        return this.pressDragged;
+    }
+
     start(point: TouchPoint): void {
         this.origin = point;
         this.last = point;
         this.pressed = false;
+        this.pressDragged = false;
         this.scrolled = false;
         this.samples = [{ t: Date.now(), y: point.y }];
         this.timer = setTimeout(() => {
@@ -60,16 +69,20 @@ export class TouchGestureRecognizer {
         if (this.origin === null || this.last === null) {
             return false;
         }
-        if (this.movedBeyondSlop(point)) {
+        const beyondSlop = this.movedBeyondSlop(point);
+        if (this.pressed) {
+            this.last = point;
+            this.pressDragged = this.pressDragged || beyondSlop;
+            this.handlers.onLongPressMove?.(point);
+            return true;
+        }
+        if (beyondSlop) {
             this.disarmLongPress();
             this.scrolled = true;
         }
         this.record(point);
         const deltaY = this.last.y - point.y;
         this.last = point;
-        if (this.pressed) {
-            return true;
-        }
         this.handlers.onScroll(deltaY, point);
         return true;
     }
@@ -85,6 +98,7 @@ export class TouchGestureRecognizer {
         this.last = null;
         // clear the long-press flag when the gesture ends: didLongPress only applies to this gesture, and keeping it would expose stale state
         this.pressed = false;
+        this.pressDragged = false;
         this.scrolled = false;
         this.samples = [];
         return velocity;
