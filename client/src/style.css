@@ -118,13 +118,13 @@ body {
     padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
 }
 
-/* keeps its keyboard-closed height and slides up above the on-screen keyboard instead of
-   shrinking, so the terminal never reflows (see useViewportHeight) */
+/* fills exactly the visible area, shrinking above the on-screen keyboard so the top stays
+   on screen (see useViewportHeight) */
 #root {
     display: flex;
     flex-direction: column;
     height: calc(var(--app-height, 100dvh) - env(safe-area-inset-top));
-    transform: translateY(calc(-1 * var(--keyboard-offset, 0px)));
+    transform: translateY(var(--viewport-top, 0px));
 }
 
 /* ---------- top bar ---------- */

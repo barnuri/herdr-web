@@ -1,9 +1,9 @@
 import { useEffect } from 'react';
-import { nextViewportLayout, type ViewportLayout } from '../lib/viewport-offset';
+import { nextViewportLayout } from '../lib/viewport-offset';
 
 /**
- * Keeps `--app-height` at the keyboard-closed height and `--keyboard-offset` at how far the
- * app must slide up to keep its bottom above the on-screen keyboard. Sizing from the visual
+ * Keeps `--app-height` at the visible height (above the on-screen keyboard when it is open) and
+ * `--viewport-top` at how far the browser panned the visual viewport. Sizing from the visual
  * viewport (instead of `vh`/`dvh`) also covers mobile "Request Desktop Site" mode, where
  * `vh`/`dvh` stay locked to the full page height.
  */
@@ -11,21 +11,16 @@ export function useViewportHeight(): void {
     useEffect(() => {
         const viewport = window.visualViewport;
         const rootStyle = document.documentElement.style;
-        let layout: ViewportLayout | null = null;
         let frame = 0;
 
         const applyLayout = (): void => {
             frame = 0;
-            layout = nextViewportLayout(
-                {
-                    width: Math.round(viewport?.width ?? window.innerWidth),
-                    height: Math.round(viewport?.height ?? window.innerHeight),
-                    offsetTop: Math.round(viewport?.offsetTop ?? 0),
-                },
-                layout,
-            );
-            rootStyle.setProperty('--app-height', `${layout.fullHeight}px`);
-            rootStyle.setProperty('--keyboard-offset', `${layout.keyboardOffset}px`);
+            const layout = nextViewportLayout({
+                height: Math.round(viewport?.height ?? window.innerHeight),
+                offsetTop: Math.round(viewport?.offsetTop ?? 0),
+            });
+            rootStyle.setProperty('--app-height', `${layout.height}px`);
+            rootStyle.setProperty('--viewport-top', `${layout.top}px`);
         };
 
         const scheduleUpdate = (): void => {

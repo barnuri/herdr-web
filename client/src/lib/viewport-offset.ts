@@ -1,27 +1,21 @@
 export interface VisualViewportSample {
-    readonly width: number;
     readonly height: number;
     readonly offsetTop: number;
 }
 
 export interface ViewportLayout {
-    readonly width: number;
-    readonly fullHeight: number;
-    readonly keyboardOffset: number;
+    readonly height: number;
+    readonly top: number;
 }
 
 /**
- * The app keeps the height it has with the keyboard closed and slides up by the keyboard's
- * height instead of shrinking, so the terminal never reflows. That full height is the tallest
- * visual viewport seen at the current width; a width change (rotation) starts over.
+ * The app fills exactly the visible area: it shrinks to the space above the on-screen keyboard
+ * (the terminal refits to fewer rows) and follows the visual viewport when the browser pans it,
+ * so neither its top nor its bottom ends up off-screen.
  */
-export function nextViewportLayout(sample: VisualViewportSample, previous: ViewportLayout | null): ViewportLayout {
-    const sameWidth = previous !== null && previous.width === sample.width;
-    const fullHeight = sameWidth ? Math.max(previous.fullHeight, sample.height) : sample.height;
-    const visibleBottom = sample.offsetTop + sample.height;
+export function nextViewportLayout(sample: VisualViewportSample): ViewportLayout {
     return {
-        width: sample.width,
-        fullHeight,
-        keyboardOffset: Math.max(0, fullHeight - visibleBottom),
+        height: Math.max(0, sample.height),
+        top: Math.max(0, sample.offsetTop),
     };
 }
