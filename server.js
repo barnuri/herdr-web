@@ -9,6 +9,7 @@ const { WebSocketServer } = require('ws');
 const { loadTlsOptions, activeCertificatePath } = require('./lib/tls');
 
 const { loadConfig } = require('./lib/config');
+const { resolveClientBidi } = require('./lib/herdr-bidi');
 const herdr = require('./lib/herdr');
 const { PtySession } = require('./lib/pty-session');
 const { ImageStore } = require('./lib/image-store');
@@ -136,7 +137,7 @@ class HerdrWebServer {
             res.end(JSON.stringify({
                 https: this.config.https,
                 httpsPort: this.config.httpsPort,
-                clientBidi: this.config.clientBidi,
+                clientBidi: resolveClientBidi(this.config.clientBidi),
             }));
             return;
         }

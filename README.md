@@ -87,14 +87,15 @@ All keys (every one optional):
     "topologyPollMs": 2000,
     "allowedOrigins": [],
     "herdrArgs": [],
-    "clientBidi": true
+    "clientBidi": "auto"
 }
 ```
 
 `HERDR_WEB_HOST` / `HERDR_WEB_PORT` env vars override the file. `herdrArgs` is passed to the
 spawned `herdr` TUI (e.g. `["--session", "web"]` to attach browsers to a separate named session).
-`clientBidi` makes the browser draw right-to-left text (Hebrew, Arabic) in visual order; set it to
-`false` when herdr already reorders rows itself, or the text shows reversed twice.
+`clientBidi` makes the browser draw right-to-left text (Hebrew, Arabic) in visual order. The
+default `"auto"` turns it off when herdr's own `config.toml` (or `$HERDR_CONFIG_PATH`) lists
+`"bidi"` in `[ui] pane_transforms`, so the text never shows reversed twice. `true`/`false` force it.
 
 HTTPS is served **alongside** HTTP: `httpsPort` defaults to the HTTP port + 1, and unless
 `httpsCertPath`/`httpsKeyPath` point at your own certificate, a self-signed cert is generated
