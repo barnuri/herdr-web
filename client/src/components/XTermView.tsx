@@ -16,6 +16,7 @@ import { TouchGestureRecognizer, type TouchPoint } from '../lib/touch/gesture-re
 import { FLING_MAX_FRAME_MS, planScroll, ScrollFling } from '../lib/touch/scroll-planner';
 import { imageFilesFromDataTransfer } from '../lib/terminal-image';
 import { parseOsc52 } from '../lib/clipboard';
+import { BidiOverlay } from '../lib/bidi-overlay';
 
 const MOBILE_MAX_WIDTH_PX = 768;
 const MOBILE_FONT_SIZE = 12;
@@ -40,10 +41,11 @@ async function decodeRgbaFrame(
 }
 
 // nerd-font families first so herdr's TUI glyphs render; the self-hosted
-// Symbols Nerd Font Mono (style.css @font-face) is the guaranteed fallback
+// Symbols Nerd Font Mono (style.css @font-face) is the guaranteed fallback.
+// The nerd fonts carry no Hebrew, so only Hebrew falls through to Miriam Mono.
 const TERMINAL_FONT_FAMILY =
     '"JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font", "MesloLGS NF", ' +
-    '"FiraCode Nerd Font", "Hack Nerd Font Mono", "Symbols Nerd Font Mono", ' +
+    '"FiraCode Nerd Font", "Hack Nerd Font Mono", "Symbols Nerd Font Mono", "Miriam Mono CLM", ' +
     'Menlo, Monaco, "Courier New", monospace';
 
 const TERMINAL_THEME = {
@@ -64,6 +66,8 @@ interface XTermViewProps {
     readonly onImageFiles?: (files: File[]) => void;
     /** Text herdr copied via OSC 52 (what iTerm/Ghostty write to the system clipboard). */
     readonly onCopyText?: (text: string) => void;
+    /** Draw right-to-left runs (Hebrew, Arabic) in visual order. Off when herdr reorders rows itself. */
+    readonly bidi: boolean;
 }
 
 export function XTermView({
@@ -75,6 +79,7 @@ export function XTermView({
     subscribeTerminal,
     onImageFiles,
     onCopyText,
+    bidi,
 }: XTermViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const onImageFilesRef = useRef(onImageFiles);
@@ -251,6 +256,16 @@ export function XTermView({
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        const xterm = xtermRef.current;
+        const screen = xterm?.element?.querySelector<HTMLElement>('.xterm-screen');
+        if (!bidi || xterm === null || screen === null || screen === undefined) {
+            return;
+        }
+        const overlay = new BidiOverlay(xterm, screen);
+        return () => overlay.dispose();
+    }, [bidi]);
 
     // touch devices: taps should navigate the TUI (mouse events) without popping
     // the virtual keyboard — inputMode 'none' suppresses it until the ⌨ toggle

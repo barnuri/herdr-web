@@ -86,12 +86,15 @@ All keys (every one optional):
     "httpsKeyPath": null,
     "topologyPollMs": 2000,
     "allowedOrigins": [],
-    "herdrArgs": []
+    "herdrArgs": [],
+    "clientBidi": true
 }
 ```
 
 `HERDR_WEB_HOST` / `HERDR_WEB_PORT` env vars override the file. `herdrArgs` is passed to the
 spawned `herdr` TUI (e.g. `["--session", "web"]` to attach browsers to a separate named session).
+`clientBidi` makes the browser draw right-to-left text (Hebrew, Arabic) in visual order; set it to
+`false` when herdr already reorders rows itself, or the text shows reversed twice.
 
 HTTPS is served **alongside** HTTP: `httpsPort` defaults to the HTTP port + 1, and unless
 `httpsCertPath`/`httpsKeyPath` point at your own certificate, a self-signed cert is generated

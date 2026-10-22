@@ -56,6 +56,7 @@ describe('config', () => {
         topologyPollMs: 2000,
         allowedOrigins: [],
         herdrArgs: [],
+        clientBidi: true,
       });
     });
 
@@ -150,6 +151,18 @@ describe('config', () => {
       assert.equal(loadConfig().topologyPollMs, 5000);
     });
 
+
+    test('clientBidi can be turned off', () => {
+      const dir = useTempConfigDir();
+      writeConfigFile(dir, { clientBidi: false });
+      assert.equal(loadConfig().clientBidi, false);
+    });
+
+    test('non-boolean clientBidi falls back to on', () => {
+      const dir = useTempConfigDir();
+      writeConfigFile(dir, { clientBidi: 'no' });
+      assert.equal(loadConfig().clientBidi, true);
+    });
 
     test('corrupt JSON in the config file keeps defaults', () => {
       const dir = useTempConfigDir();

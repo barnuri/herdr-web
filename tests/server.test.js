@@ -161,6 +161,14 @@ describe('HerdrWebServer', () => {
       assert.ok(res.body.length > 0);
     });
 
+    test('/meta reports the clientBidi setting', async () => {
+      const res = makeRes();
+      makeServer({ clientBidi: false }).handleHttp({ url: '/meta', headers: {}, method: 'GET' }, res);
+      await res.finished;
+      assert.equal(res.statusCode, 200);
+      assert.equal(JSON.parse(res.body).clientBidi, false);
+    });
+
     test('/ maps to index.html', async () => {
       const res = makeRes();
       server.handleHttp({ url: '/', headers: {}, method: "GET" }, res);

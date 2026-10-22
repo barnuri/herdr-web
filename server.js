@@ -133,7 +133,11 @@ class HerdrWebServer {
         }
         if (requestPath === '/meta') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ https: this.config.https, httpsPort: this.config.httpsPort }));
+            res.end(JSON.stringify({
+                https: this.config.https,
+                httpsPort: this.config.httpsPort,
+                clientBidi: this.config.clientBidi,
+            }));
             return;
         }
         if (requestPath === '/cert') {

@@ -251,12 +251,17 @@ body {
 /* kitty graphics frames (terminal-browser panes) drawn over xterm's own grid;
    never intercept pointer events — the TUI's mouse tracking and the touch-scroll
    shim both rely on reaching xterm underneath */
-.xterm-screen .kitty-overlay {
+.xterm-screen .kitty-overlay,
+.xterm-screen .bidi-overlay {
     position: absolute;
     top: 0;
     left: 0;
     pointer-events: none;
     z-index: 5;
+}
+
+.xterm-screen .bidi-overlay {
+    z-index: 4;
 }
 
 /* ---------- composer ---------- */

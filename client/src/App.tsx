@@ -13,6 +13,7 @@ import { quoteShellPath, uploadImage, validateImageFile } from './lib/terminal-i
 import type { NotificationSettingsHelp } from './lib/notifications';
 import { useHerdrSocket } from './hooks/useHerdrSocket';
 import { useNotifications } from './hooks/useNotifications';
+import { useClientBidi } from './hooks/useClientBidi';
 import { useReloadOnNewBuild } from './hooks/useReloadOnNewBuild';
 import { useViewportHeight } from './hooks/useViewportHeight';
 import type { Notice } from './components/ToastHost';
@@ -45,6 +46,7 @@ export function App() {
     useViewportHeight();
     const { connected, status, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
     useReloadOnNewBuild(connected);
+    const clientBidi = useClientBidi();
     const [stored, setStored] = useState(loadStoredSettings);
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications(stored.allChanges);
     const [notice, setNotice] = useState<Notice | null>(null);
@@ -181,6 +183,7 @@ export function App() {
                 subscribeTerminal={subscribeTerminal}
                 onImageFiles={(files) => void onImageFiles(files)}
                 onCopyText={(text) => void onCopyText(text)}
+                bidi={clientBidi}
             />
             {pendingCopy !== null && (
                 <div className="copy-bar">
