@@ -28,6 +28,8 @@ const RIGHT_MOUSE_BUTTON = 2;
 const RIGHT_MOUSE_BUTTONS_MASK = 2;
 const LONG_PRESS_HAPTIC_MS = 15;
 const SELECTION_COPY_DELAY_MS = 150;
+// a double or triple tap makes the pane app (Claude) select and copy a word or line itself
+const MULTI_TAP_COPY_DELAY_MS = 400;
 const MOUSE_DRAG_MIN_PX = 4;
 
 // herdr transmits terminal-browser frames as raw RGBA (kitty graphics f=32)
@@ -513,6 +515,12 @@ export function XTermView({
                 requestSelectionCopy();
             }
         };
+        const onClick = (event: MouseEvent) => {
+            if (event.isTrusted && event.detail >= 2) {
+                window.setTimeout(() => send({ type: 'read_clipboard_if_changed' }), MULTI_TAP_COPY_DELAY_MS);
+            }
+        };
+        container.addEventListener('click', onClick);
         container.addEventListener('mousedown', onMouseDown);
         container.addEventListener('mouseup', onMouseUp);
         container.addEventListener('touchstart', onTouchStart, { passive: true });
@@ -523,6 +531,7 @@ export function XTermView({
         return () => {
             container.removeEventListener('mousedown', onMouseDown);
             container.removeEventListener('mouseup', onMouseUp);
+            container.removeEventListener('click', onClick);
             container.removeEventListener('touchstart', onTouchStart);
             container.removeEventListener('touchmove', onTouchMove);
             container.removeEventListener('touchend', onTouchEnd);

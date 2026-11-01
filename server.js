@@ -51,6 +51,8 @@ class HerdrWebServer {
         this.images = new ImageStore();
         this.clients = new Set();
         this.ptyBySocket = new Map();
+        this.clipboardSeen = new WeakMap();
+        this.clipboardTimer = null;
         this.lastTopology = null;
         this.topologyTimer = null;
     }
@@ -300,6 +302,9 @@ class HerdrWebServer {
 
     onConnection(socket) {
         this.clients.add(socket);
+        // baseline for read_clipboard_if_changed: whatever is already copied is not a new copy
+        void SystemClipboard.read().then((text) => this.clipboardSeen.set(socket, text));
+        this.startClipboardWatch();
         socket.on('message', (raw) => this.onMessage(socket, raw));
         socket.on('close', () => this.dropClient(socket));
         if (this.lastTopology) {
@@ -309,6 +314,9 @@ class HerdrWebServer {
 
     dropClient(socket) {
         this.clients.delete(socket);
+        if (this.clients.size === 0) {
+            this.stopClipboardWatch();
+        }
         const session = this.ptyBySocket.get(socket);
         if (session) {
             session.cancelPendingOutput?.();
@@ -347,7 +355,11 @@ class HerdrWebServer {
             return;
         }
         if (type === 'read_clipboard') {
-            void this.sendClipboard(socket);
+            void this.sendClipboard(socket, false);
+            return;
+        }
+        if (type === 'read_clipboard_if_changed') {
+            void this.sendClipboard(socket, true);
             return;
         }
         if (type === 'refresh_topology') {
@@ -357,9 +369,42 @@ class HerdrWebServer {
         this.send(socket, { type: 'error', message: `unknown message type: ${String(type)}` });
     }
 
-    async sendClipboard(socket) {
+    // pushes anything copied on the host while a page is open, so a copy Claude makes itself
+    // (pbcopy, "copy that to my clipboard") reaches the phone without a selection gesture
+    startClipboardWatch() {
+        if (this.clipboardTimer !== null) {
+            return;
+        }
+        this.clipboardTimer = setInterval(() => void this.pushClipboardChanges(), SystemClipboard.WATCH_MS);
+        this.clipboardTimer.unref?.();
+    }
+
+    stopClipboardWatch() {
+        if (this.clipboardTimer !== null) {
+            clearInterval(this.clipboardTimer);
+            this.clipboardTimer = null;
+        }
+    }
+
+    async pushClipboardChanges() {
         const text = await SystemClipboard.read();
-        if (text !== null) {
+        for (const socket of this.clients) {
+            // no baseline yet: the connect-time read has not finished
+            if (!this.clipboardSeen.has(socket) || this.clipboardSeen.get(socket) === text) {
+                continue;
+            }
+            this.clipboardSeen.set(socket, text);
+            if (text !== null) {
+                this.send(socket, { type: 'clipboard', text });
+            }
+        }
+    }
+
+    async sendClipboard(socket, onlyIfChanged) {
+        const text = await SystemClipboard.read();
+        const unchanged = onlyIfChanged && text === this.clipboardSeen.get(socket);
+        this.clipboardSeen.set(socket, text);
+        if (text !== null && !unchanged) {
             this.send(socket, { type: 'clipboard', text });
         }
     }

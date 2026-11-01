@@ -83,6 +83,31 @@ export function App() {
         setNotice({ id: nextNoticeId, text, tone });
     };
 
+    // Plain http only allows a clipboard write inside a tap, so the waiting copy is written by
+    // the user's next tap anywhere on the page instead of requiring a tap on the Copy button.
+    useEffect(() => {
+        if (pendingCopy === null) {
+            return undefined;
+        }
+        const text = pendingCopy;
+        const onTap = () => {
+            void copyText(text).then((copied) => {
+                if (copied) {
+                    setPendingCopy((current) => (current === text ? null : current));
+                    showNotice('Copied');
+                }
+            });
+        };
+        document.addEventListener('touchend', onTap, true);
+        document.addEventListener('click', onTap, true);
+        return () => {
+            document.removeEventListener('touchend', onTap, true);
+            document.removeEventListener('click', onTap, true);
+        };
+        // showNotice only sets state, so the listener does not need to be re-bound when it changes
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingCopy]);
+
     const onCopyText = async (text: string) => {
         if (await copyText(text)) {
             setPendingCopy(null);

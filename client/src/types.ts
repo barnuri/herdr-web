@@ -41,4 +41,5 @@ export type ClientMessage =
     | { type: 'input'; data: string }
     | { type: 'resize'; cols: number; rows: number }
     | { type: 'refresh_topology' }
-    | { type: 'read_clipboard' };
+    | { type: 'read_clipboard' }
+    | { type: 'read_clipboard_if_changed' };
