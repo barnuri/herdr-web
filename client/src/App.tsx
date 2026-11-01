@@ -211,6 +211,22 @@ export function App() {
                 bidi={clientBidi}
             />
             {pendingCopy !== null && (
+                <div className="copy-popup-backdrop">
+                    <div className="copy-popup" role="dialog" aria-label="Copy to clipboard">
+                        <span className="copy-popup-title">Copied on the host. Tap Copy to put it on this device.</span>
+                        <pre className="copy-popup-text">{pendingCopy}</pre>
+                        <div className="copy-popup-actions">
+                            <button type="button" onClick={() => setPendingCopy(null)}>
+                                Dismiss
+                            </button>
+                            <button type="button" className="copy-popup-copy" onClick={() => void onCopyText(pendingCopy)}>
+                                Copy
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {pendingCopy !== null && (
                 <div className="copy-bar">
                     <span className="copy-bar-text">{pendingCopy}</span>
                     <button type="button" onClick={() => void onCopyText(pendingCopy)}>

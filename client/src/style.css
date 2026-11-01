@@ -431,13 +431,77 @@ input:focus-visible,
     border-left-color: var(--idle);
 }
 
-/* ---------- copy bar: herdr's copy waiting for a tap (plain http blocks silent clipboard writes) ---------- */
+/* ---------- copy popup: herdr's copy waiting for a tap (plain http blocks silent clipboard writes) ---------- */
+.copy-popup-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+.copy-popup {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: min(100%, 420px);
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--accent);
+    border-radius: var(--radius-md);
+    background: var(--panel-raised);
+    color: var(--text);
+    box-shadow: var(--shadow);
+}
+
+.copy-popup-title {
+    font-size: var(--font-sm);
+    color: var(--text-dim);
+}
+
+.copy-popup-text {
+    max-height: 30vh;
+    margin: 0;
+    overflow: auto;
+    font-family: var(--mono);
+    font-size: var(--font-sm);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.copy-popup-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.copy-popup-actions button {
+    flex: 1;
+    min-height: 48px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--panel);
+    color: var(--text);
+    font: inherit;
+}
+
+.copy-popup-actions .copy-popup-copy {
+    flex: 2;
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 600;
+}
+
+/* copy bar: the compact twin of the popup, kept above its backdrop */
 .copy-bar {
     position: fixed;
     left: 50%;
     bottom: calc(76px + env(safe-area-inset-bottom));
     transform: translateX(-50%);
-    z-index: 11;
+    z-index: 21;
     display: flex;
     align-items: center;
     gap: 8px;
