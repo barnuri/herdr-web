@@ -28,6 +28,9 @@ export class KittyOverlayRenderer {
             return;
         }
         context.clearRect(0, 0, this.screen.clientWidth, this.screen.clientHeight);
+        // frames are scaled to the cell grid, so smooth them instead of leaving hard pixel edges
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = 'high';
         for (const frame of frames) {
             const bitmap = resolveBitmap(frame.imageId);
             if (bitmap === undefined) {

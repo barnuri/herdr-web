@@ -104,6 +104,9 @@ interface ComposerProps {
     readonly armedModifier: ArmedModifier | null;
     readonly onToggleKeyboard: () => void;
     readonly onToggleModifier: (modifier: ArmedModifier) => void;
+    /** Arms a border drag for the next touch on a pane divider. */
+    readonly resizeArmed: boolean;
+    readonly onToggleResize: () => void;
     readonly onSendBytes: (bytes: string) => void;
     /** Images picked from the photo library or camera. Omit to hide the image keys. */
     readonly onImageFiles?: (files: File[]) => void;
@@ -122,6 +125,8 @@ export function Composer({
     armedModifier,
     onToggleKeyboard,
     onToggleModifier,
+    resizeArmed,
+    onToggleResize,
     onSendBytes,
     onImageFiles,
     uploadingImage = false,
@@ -216,6 +221,17 @@ export function Composer({
                             {label}
                         </button>
                     ))}
+                    <button
+                        type="button"
+                        className={resizeArmed ? 'key-btn key-active' : 'key-btn'}
+                        aria-pressed={resizeArmed}
+                        aria-label="Resize panes: drag a pane border with the next touch"
+                        title="Resize panes: drag a pane border with the next touch"
+                        disabled={disabled}
+                        onClick={onToggleResize}
+                    >
+                        resize
+                    </button>
                     {onImageFiles && (
                         <>
                             <input

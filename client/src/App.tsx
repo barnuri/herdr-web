@@ -52,6 +52,7 @@ export function App() {
     const [notice, setNotice] = useState<Notice | null>(null);
     const [keyboardEnabled, setKeyboardEnabled] = useState(initialKeyboardEnabled);
     const [armedModifier, setArmedModifier] = useState<ArmedModifier | null>(null);
+    const [resizeArmed, setResizeArmed] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     // text herdr copied that the browser refused to write without a tap (plain http)
@@ -209,6 +210,8 @@ export function App() {
                 onImageFiles={(files) => void onImageFiles(files)}
                 onCopyText={(text) => void onCopyText(text)}
                 bidi={clientBidi}
+                resizeArmed={resizeArmed}
+                onResizeApplied={() => setResizeArmed(false)}
             />
             {pendingCopy !== null && (
                 <div className="copy-popup-backdrop">
@@ -243,6 +246,8 @@ export function App() {
                 armedModifier={armedModifier}
                 onToggleKeyboard={() => setKeyboardEnabled((current) => !current)}
                 onToggleModifier={(modifier) => setArmedModifier((current) => (current === modifier ? null : modifier))}
+                resizeArmed={resizeArmed}
+                onToggleResize={() => setResizeArmed((current) => !current)}
                 onSendBytes={(bytes) => send({ type: 'input', data: bytes })}
                 onImageFiles={(files) => void onImageFiles(files)}
                 uploadingImage={uploadingImage}

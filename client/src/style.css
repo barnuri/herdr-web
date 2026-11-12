@@ -235,6 +235,7 @@ body {
 /* ---------- terminal ---------- */
 .xterm-wrap {
     flex: 1;
+    position: relative;
     min-height: 0;
     padding: 6px 4px 0 8px;
     background: var(--bg);
@@ -375,6 +376,29 @@ body {
    it keeps its contrast */
 .xterm-wrap.drop-target {
     outline: 2px dashed var(--accent);
+    outline-offset: -4px;
+}
+
+.xterm-wrap.drop-target::after {
+    content: 'Drop image to attach';
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 13px;
+    font-weight: 600;
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* resize armed: the next touch on a pane border drags it; solid outline says the terminal
+   is in that mode, so a stray touch is not mistaken for scrolling */
+.xterm-wrap.resize-armed {
+    outline: 2px solid var(--accent);
     outline-offset: -4px;
 }
 

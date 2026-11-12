@@ -17,6 +17,7 @@ import { FLING_MAX_FRAME_MS, planScroll, ScrollFling } from '../lib/touch/scroll
 import { imageFilesFromDataTransfer } from '../lib/terminal-image';
 import { parseOsc52 } from '../lib/clipboard';
 import { BidiOverlay } from '../lib/bidi-overlay';
+import { findDividerCell, findVerticalDividerCell } from '../lib/pane-divider';
 
 const MOBILE_MAX_WIDTH_PX = 768;
 const MOBILE_FONT_SIZE = 12;
@@ -70,6 +71,10 @@ interface XTermViewProps {
     readonly onCopyText?: (text: string) => void;
     /** Draw right-to-left runs (Hebrew, Arabic) in visual order. Off when herdr reorders rows itself. */
     readonly bidi: boolean;
+    /** The next touch drag on a pane border resizes it, instead of scrolling. */
+    readonly resizeArmed: boolean;
+    /** Called once a border drag ends, so the caller can disarm the resize toggle. */
+    readonly onResizeApplied: () => void;
 }
 
 export function XTermView({
@@ -82,6 +87,8 @@ export function XTermView({
     onImageFiles,
     onCopyText,
     bidi,
+    resizeArmed,
+    onResizeApplied,
 }: XTermViewProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const onImageFilesRef = useRef(onImageFiles);
@@ -93,6 +100,8 @@ export function XTermView({
     const startedRef = useRef(false);
     const armedModifierRef = useRef(armedModifier);
     const onModifierAppliedRef = useRef(onModifierApplied);
+    const resizeArmedRef = useRef(resizeArmed);
+    const onResizeAppliedRef = useRef(onResizeApplied);
     const graphicsResetRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
@@ -101,6 +110,13 @@ export function XTermView({
     useEffect(() => {
         onModifierAppliedRef.current = onModifierApplied;
     }, [onModifierApplied]);
+    useEffect(() => {
+        resizeArmedRef.current = resizeArmed;
+        containerRef.current?.classList.toggle('resize-armed', resizeArmed);
+    }, [resizeArmed]);
+    useEffect(() => {
+        onResizeAppliedRef.current = onResizeApplied;
+    }, [onResizeApplied]);
 
     useEffect(() => {
         const container = containerRef.current;
@@ -361,6 +377,40 @@ export function XTermView({
             return true;
         };
 
+        // Pane resize by touch: herdr resizes a split when its border is dragged with the
+        // mouse. With the resize toggle armed, a touch that starts on a border presses the
+        // mouse there and the finger drags it, instead of scrolling. The press is placed at the
+        // centre of the border cell, so herdr sees the press on the border itself.
+        let dividerDrag = false;
+        let dividerArmed = false;
+        const dividerPressPoint = (point: TouchPoint, xterm: XTerm, anyDivider: boolean): TouchPoint | null => {
+            const screen = xterm.element?.querySelector<HTMLElement>('.xterm-screen') ?? null;
+            if (screen === null) {
+                return null;
+            }
+            const rect = screen.getBoundingClientRect();
+            const cellWidth = rect.width / xterm.cols;
+            const cellHeight = rect.height / xterm.rows;
+            const buffer = xterm.buffer.active;
+            const find = anyDivider ? findDividerCell : findVerticalDividerCell;
+            const divider = find(
+                (col, row) => buffer.getLine(buffer.viewportY + row)?.getCell(col)?.getChars() ?? '',
+                xterm.cols,
+                xterm.rows,
+                {
+                    col: Math.floor((point.x - rect.left) / cellWidth),
+                    row: Math.floor((point.y - rect.top) / cellHeight),
+                },
+            );
+            if (divider === null) {
+                return null;
+            }
+            return {
+                x: rect.left + (divider.col + 0.5) * cellWidth,
+                y: rect.top + (divider.row + 0.5) * cellHeight,
+            };
+        };
+
         const cellHeightOf = (xterm: XTerm): number => {
             const screen = xterm.element?.querySelector<HTMLElement>('.xterm-screen') ?? null;
             return screen && xterm.rows > 0 ? screen.clientHeight / xterm.rows : 16;
@@ -453,6 +503,15 @@ export function XTermView({
                 stopFling();
                 scrollRemainder = 0;
                 lastPoint = pointOf(event);
+                // armed: any border. Not armed: only a tall vertical pane split, so scrolling a TUI's own rules is safe
+                const armed = resizeArmedRef.current;
+                const grip = xtermRef.current ? dividerPressPoint(lastPoint, xtermRef.current, armed) : null;
+                if (grip !== null) {
+                    dividerDrag = true;
+                    dividerArmed = armed;
+                    dispatchMouse('mousedown', LEFT_MOUSE_BUTTON, grip);
+                    return;
+                }
                 recognizer.start(lastPoint);
             }
         };
@@ -461,9 +520,28 @@ export function XTermView({
                 return;
             }
             lastPoint = pointOf(event);
+            if (dividerDrag) {
+                dispatchMouse('mousemove', LEFT_MOUSE_BUTTON, lastPoint);
+                event.preventDefault();
+                return;
+            }
             if (recognizer.move(lastPoint)) {
                 event.preventDefault();
             }
+        };
+        // releasing a border drag sends the mouse-up herdr needs to finish the resize, and
+        // disarms the toggle: one resize per arming, like the one-shot ctrl/alt keys
+        const finishDividerDrag = (event: TouchEvent): boolean => {
+            if (!dividerDrag) {
+                return false;
+            }
+            dividerDrag = false;
+            event.preventDefault();
+            dispatchMouse('mouseup', LEFT_MOUSE_BUTTON, lastPoint);
+            if (dividerArmed) {
+                onResizeAppliedRef.current();
+            }
+            return true;
         };
         // after a hold the browser still emits its compatibility mouse events, which would land
         // an extra click on top of the ones we sent; preventing the touchend default suppresses them
@@ -491,10 +569,16 @@ export function XTermView({
             startFling(velocity, lastPoint);
         };
         const onTouchEnd = (event: TouchEvent) => {
+            if (finishDividerDrag(event)) {
+                return;
+            }
             finishGesture(event, true);
         };
         // touchcancel means the system took the gesture (incoming call, notification shade); continuing inertia would scroll on its own, so stop
         const onTouchCancel = (event: TouchEvent) => {
+            if (finishDividerDrag(event)) {
+                return;
+            }
             finishGesture(event, false);
         };
         // the native menu would cover the terminal on every right click — on desktop it hides
@@ -582,13 +666,6 @@ export function XTermView({
             container.classList.add('drop-target');
         };
 
-        const onDragLeave = (event: DragEvent) => {
-            if (event.relatedTarget instanceof Node && container.contains(event.relatedTarget)) {
-                return;
-            }
-            container.classList.remove('drop-target');
-        };
-
         const onDrop = (event: DragEvent) => {
             container.classList.remove('drop-target');
             if (!draggingFiles(event)) {
@@ -598,15 +675,22 @@ export function XTermView({
             emit(imageFilesFromDataTransfer(event.dataTransfer));
         };
 
+        // listen on the document: a file dropped on the top bar or key bar would otherwise make
+        // the browser open it and navigate away from the app
+        const onDragLeave = (event: DragEvent) => {
+            if (event.relatedTarget === null) {
+                container.classList.remove('drop-target');
+            }
+        };
         container.addEventListener('paste', onPaste);
-        container.addEventListener('dragover', onDragOver);
-        container.addEventListener('dragleave', onDragLeave);
-        container.addEventListener('drop', onDrop);
+        document.addEventListener('dragover', onDragOver);
+        document.addEventListener('dragleave', onDragLeave);
+        document.addEventListener('drop', onDrop);
         return () => {
             container.removeEventListener('paste', onPaste);
-            container.removeEventListener('dragover', onDragOver);
-            container.removeEventListener('dragleave', onDragLeave);
-            container.removeEventListener('drop', onDrop);
+            document.removeEventListener('dragover', onDragOver);
+            document.removeEventListener('dragleave', onDragLeave);
+            document.removeEventListener('drop', onDrop);
         };
     }, []);
 
