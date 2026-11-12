@@ -14,9 +14,9 @@ function makeBitmap(width: number, height: number, close: () => void = () => {})
     return { width, height, source: {} as CanvasImageSource, close };
 }
 
-function buildStore(decode = vi.fn<KittyBitmapDecoder>(async () => makeBitmap(2, 1))) {
+function buildStore(decode = vi.fn<KittyBitmapDecoder>(async () => makeBitmap(2, 1)), graceMs = 0) {
     const onChange = vi.fn();
-    return { store: new KittyImageStore(decode, onChange), decode, onChange };
+    return { store: new KittyImageStore(decode, onChange, graceMs), decode, onChange };
 }
 
 function feed(store: KittyImageStore, control: string, payload = '', anchor = ANCHOR) {
@@ -113,5 +113,48 @@ describe('KittyImageStore', () => {
         expect(closed).toHaveBeenCalledTimes(1);
         expect([...store.visiblePlacements]).toEqual([]);
         expect(onChange).toHaveBeenCalledTimes(1);
+    });
+
+    describe('delete grace period', () => {
+        it('keeps the old frame until a new frame for the same id replaces it', async () => {
+            vi.useFakeTimers();
+            try {
+                const closed = vi.fn();
+                const { store } = buildStore(vi.fn<KittyBitmapDecoder>(async () => makeBitmap(2, 1, closed)), 150);
+                feed(store, 'a=t,t=d,f=32,s=2,v=1,i=5,m=0', rgbaBase64(2, 1));
+                await vi.waitFor(() => expect(store.bitmapFor(5)).toBeDefined());
+                feed(store, 'a=p,i=5,p=99,c=2,r=1');
+
+                feed(store, 'a=d,d=I,i=5');
+                expect(store.bitmapFor(5)).toBeDefined();
+                expect([...store.visiblePlacements]).toHaveLength(1);
+
+                feed(store, 'a=t,t=d,f=32,s=2,v=1,i=5,m=0', rgbaBase64(2, 1));
+                vi.advanceTimersByTime(500);
+
+                expect([...store.visiblePlacements]).toHaveLength(1);
+                await vi.waitFor(() => expect(store.bitmapFor(5)).toBeDefined());
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('still removes the image once the grace period passes with no new frame', async () => {
+            vi.useFakeTimers();
+            try {
+                const { store } = buildStore(undefined, 150);
+                feed(store, 'a=t,t=d,f=32,s=2,v=1,i=5,m=0', rgbaBase64(2, 1));
+                await vi.waitFor(() => expect(store.bitmapFor(5)).toBeDefined());
+                feed(store, 'a=p,i=5,p=99,c=2,r=1');
+
+                feed(store, 'a=d,d=I,i=5');
+                vi.advanceTimersByTime(150);
+
+                expect(store.bitmapFor(5)).toBeUndefined();
+                expect([...store.visiblePlacements]).toEqual([]);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
     });
 });

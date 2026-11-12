@@ -22,11 +22,19 @@ export class KittyImageStore {
 
     private readonly generations = new Map<number, number>();
 
+    private readonly pendingDeletes = new Map<number, ReturnType<typeof setTimeout>>();
+
     private pending: PendingTransfer | null = null;
+
+    // herdr replaces a frame by deleting the old image and transmitting a new one. Deleting at
+    // once would leave the pane blank until the new frame finishes decoding (a visible flicker),
+    // so a delete waits this long and is cancelled when a new frame for the same id arrives.
+    static readonly DEFAULT_DELETE_GRACE_MS = 150;
 
     constructor(
         private readonly decode: KittyBitmapDecoder,
         private readonly onChange: () => void,
+        private readonly deleteGraceMs: number = KittyImageStore.DEFAULT_DELETE_GRACE_MS,
     ) {}
 
     get visiblePlacements(): Iterable<KittyPlacement> {
@@ -56,6 +64,10 @@ export class KittyImageStore {
     }
 
     clear(): void {
+        for (const timer of this.pendingDeletes.values()) {
+            clearTimeout(timer);
+        }
+        this.pendingDeletes.clear();
         for (const bitmap of this.bitmaps.values()) {
             bitmap.close();
         }
@@ -74,6 +86,7 @@ export class KittyImageStore {
         if (control.format !== KittyImageStore.RGBA_FORMAT) {
             return;
         }
+        this.cancelPendingDelete(imageId);
         this.pending = { imageId, width: pixelWidth, height: pixelHeight, chunks: [payload] };
         if (!control.moreChunks) {
             this.completeTransfer();
@@ -146,6 +159,31 @@ export class KittyImageStore {
         if (imageId === null) {
             return;
         }
+        if (this.deleteGraceMs <= 0) {
+            this.removeImage(imageId);
+            return;
+        }
+        if (this.pendingDeletes.has(imageId)) {
+            return;
+        }
+        this.pendingDeletes.set(
+            imageId,
+            setTimeout(() => {
+                this.pendingDeletes.delete(imageId);
+                this.removeImage(imageId);
+            }, this.deleteGraceMs),
+        );
+    }
+
+    private cancelPendingDelete(imageId: number): void {
+        const timer = this.pendingDeletes.get(imageId);
+        if (timer !== undefined) {
+            clearTimeout(timer);
+            this.pendingDeletes.delete(imageId);
+        }
+    }
+
+    private removeImage(imageId: number): void {
         this.nextGeneration(imageId);
         this.bitmaps.get(imageId)?.close();
         this.bitmaps.delete(imageId);
