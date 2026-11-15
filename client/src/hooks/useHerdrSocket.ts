@@ -31,7 +31,8 @@ export function useHerdrSocket(): HerdrState {
 
     useEffect(() => {
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const url = `${protocol}://${window.location.host}/ws`;
+        const device = window.matchMedia('(pointer: coarse)').matches ? 'mobile' : 'desktop';
+        const url = `${protocol}://${window.location.host}/ws?device=${device}`;
         const socket = new HerdrSocket(
             url,
             (message: ServerMessage) => {

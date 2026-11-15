@@ -16,6 +16,7 @@ const { ImageStore } = require('./lib/image-store');
 const { PushService } = require('./lib/push-service');
 const { SystemClipboard } = require('./lib/system-clipboard');
 const { StateWatcher } = require('./lib/state-watcher');
+const { parseDevice, writeMobileViewer, mobileViewerPath } = require('./lib/mobile-viewer');
 
 class HerdrWebServer {
     static PUBLIC_DIR = path.join(__dirname, 'public');
@@ -55,6 +56,8 @@ class HerdrWebServer {
         this.clipboardTimer = null;
         this.lastTopology = null;
         this.topologyTimer = null;
+        this.mobileSockets = new Set();
+        this.mobileTimer = null;
     }
 
     start() {
@@ -88,7 +91,7 @@ class HerdrWebServer {
             path: '/ws',
             verifyClient: ({ origin, req }) => this.isAllowedOrigin(origin, req),
         });
-        wss.on('connection', (socket) => this.onConnection(socket));
+        wss.on('connection', (socket, req) => this.onConnection(socket, req));
         server.listen(port, this.config.host, () => {
             process.stdout.write(`herdr-web listening on ${scheme}://${this.config.host}:${port}\n`);
         });
@@ -300,8 +303,12 @@ class HerdrWebServer {
         });
     }
 
-    onConnection(socket) {
+    onConnection(socket, req) {
         this.clients.add(socket);
+        if (parseDevice(req?.url) === 'mobile') {
+            this.mobileSockets.add(socket);
+            this.publishMobileViewer();
+        }
         // baseline for read_clipboard_if_changed: whatever is already copied is not a new copy
         void SystemClipboard.read().then((text) => this.clipboardSeen.set(socket, text));
         this.startClipboardWatch();
@@ -314,6 +321,9 @@ class HerdrWebServer {
 
     dropClient(socket) {
         this.clients.delete(socket);
+        if (this.mobileSockets.delete(socket)) {
+            this.publishMobileViewer();
+        }
         if (this.clients.size === 0) {
             this.stopClipboardWatch();
         }
@@ -322,6 +332,19 @@ class HerdrWebServer {
             session.cancelPendingOutput?.();
             session.kill();
             this.ptyBySocket.delete(socket);
+        }
+    }
+
+    // Publishes the attached mobile client count for other processes. The 30 s refresh
+    // runs only while a mobile client is attached; it is cleared when the count hits 0.
+    publishMobileViewer() {
+        writeMobileViewer(this.mobileSockets.size, mobileViewerPath());
+        if (this.mobileSockets.size === 0) {
+            clearInterval(this.mobileTimer);
+            this.mobileTimer = null;
+        } else if (!this.mobileTimer) {
+            this.mobileTimer = setInterval(() => this.publishMobileViewer(), 30_000);
+            this.mobileTimer.unref();
         }
     }
 
