@@ -167,6 +167,44 @@ body {
     background: var(--idle);
 }
 
+/* env selector: only rendered when more than one herdr env is reachable */
+.env-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.env-select-input {
+    max-width: 160px;
+    min-height: 32px;
+    padding: 2px 8px;
+    font: inherit;
+    color: var(--text);
+    background: var(--panel-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.env-select-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+@media (max-width: 480px) {
+    .env-select-caption {
+        display: none;
+    }
+
+    .env-select-input {
+        max-width: 110px;
+        min-height: 36px;
+    }
+}
+
 /* signature: one dot per agent pane */
 .herd-strip {
     display: flex;

@@ -16,6 +16,7 @@ const { ImageStore } = require('./lib/image-store');
 const { PushService } = require('./lib/push-service');
 const { SystemClipboard } = require('./lib/system-clipboard');
 const { StateWatcher } = require('./lib/state-watcher');
+const { EnvRegistry, defaultEnv, childEnvFor } = require('./lib/envs');
 const { parseDevice, writeMobileViewer, mobileViewerPath } = require('./lib/mobile-viewer');
 
 class HerdrWebServer {
@@ -45,16 +46,17 @@ class HerdrWebServer {
 
     static IMAGE_ROUTE = '/images';
 
-    constructor(config, pushService = new PushService()) {
+    constructor(config, pushService = new PushService(), envRegistry = new EnvRegistry()) {
         this.config = config;
-        this.watcher = new StateWatcher();
+        this.envs = envRegistry;
+        this.envOfSocket = new WeakMap();
+        this.topologyByEnv = new Map();
         this.push = pushService;
         this.images = new ImageStore();
         this.clients = new Set();
         this.ptyBySocket = new Map();
         this.clipboardSeen = new WeakMap();
         this.clipboardTimer = null;
-        this.lastTopology = null;
         this.topologyTimer = null;
         this.mobileSockets = new Set();
         this.mobileTimer = null;
@@ -65,8 +67,8 @@ class HerdrWebServer {
         if (this.config.https) {
             this.startHttps();
         }
-        this.topologyTimer = setInterval(() => this.pollTopology(), this.config.topologyPollMs);
-        this.pollTopology();
+        this.topologyTimer = setInterval(() => void this.pollAll(), this.config.topologyPollMs);
+        void this.pollAll();
     }
 
     startHttps() {
@@ -89,12 +91,40 @@ class HerdrWebServer {
         const wss = new WebSocketServer({
             server,
             path: '/ws',
-            verifyClient: ({ origin, req }) => this.isAllowedOrigin(origin, req),
+            verifyClient: ({ origin, req }, done) => this.verifyClient(origin, req, done),
         });
         wss.on('connection', (socket, req) => this.onConnection(socket, req));
         server.listen(port, this.config.host, () => {
             process.stdout.write(`herdr-web listening on ${scheme}://${this.config.host}:${port}\n`);
         });
+    }
+
+    // The client sends only an env id; the server maps it to a socket/home. An unknown id is
+    // refused during the upgrade (HTTP 400) so nothing is ever attached to a made-up target.
+    verifyClient(origin, req, done) {
+        if (!this.isAllowedOrigin(origin, req)) {
+            done(false, 403, 'forbidden origin');
+            return;
+        }
+        this.resolveEnv(req.url).then((envInfo) => {
+            if (!envInfo) {
+                done(false, 400, 'unknown env');
+                return;
+            }
+            req.herdrEnv = envInfo;
+            done(true);
+        }, () => done(false, 400, 'unknown env'));
+    }
+
+    // Resolves ?env=<id> from a request url. Missing means the default env; unknown means null.
+    async resolveEnv(reqUrl) {
+        let id = null;
+        try {
+            id = new URL(reqUrl || '/', 'http://localhost').searchParams.get('env');
+        } catch {
+            return null;
+        }
+        return this.envs.resolve(id);
     }
 
     // browsers always send an Origin header on WebSocket upgrades; non-browser
@@ -134,7 +164,27 @@ class HerdrWebServer {
             return;
         }
         if (requestPath === HerdrWebServer.IMAGE_ROUTE && req.method === 'POST') {
-            void this.handleImageUpload(req, res);
+            void this.resolveEnv(req.url).then((envInfo) => {
+                if (!envInfo) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ ok: false, message: 'Unknown env.' }));
+                    return;
+                }
+                return this.handleImageUpload(req, res, envInfo);
+            });
+            return;
+        }
+        if (requestPath === '/api/envs' && req.method === 'GET') {
+            this.envs.publicList().then(
+                (list) => {
+                    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+                    res.end(JSON.stringify(list));
+                },
+                () => {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end('[]');
+                },
+            );
             return;
         }
         if (requestPath === '/meta') {
@@ -200,7 +250,7 @@ class HerdrWebServer {
     // Images are uploaded as a raw body with the type in the Content-Type header: one
     // field needs no multipart parser. The destination is never sent by the browser —
     // it is the focused pane's own working directory, read back from herdr.
-    async handleImageUpload(req, res) {
+    async handleImageUpload(req, res, envInfo) {
         const respond = (status, payload) => {
             res.writeHead(status, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(payload));
@@ -218,7 +268,7 @@ class HerdrWebServer {
             return;
         }
 
-        const cwd = await this.focusedPaneCwd();
+        const cwd = await this.focusedPaneCwd(envInfo);
         const result = await this.images.save({ buffer, mimeType: req.headers['content-type'], cwd });
         if (!result.ok) {
             respond(result.status, { ok: false, message: result.message });
@@ -229,9 +279,9 @@ class HerdrWebServer {
 
     // foreground_cwd tracks where the pane's running program actually is, which is what
     // the user means by 'this project'; cwd is the shell's own and the fallback.
-    async focusedPaneCwd() {
+    async focusedPaneCwd(envInfo) {
         try {
-            const panes = await herdr.listPanes();
+            const panes = await herdr.listPanes(envInfo);
             const focused = panes.find((pane) => pane.focused) || panes[0];
             return focused?.foreground_cwd || focused?.cwd || null;
         } catch (error) {
@@ -304,7 +354,9 @@ class HerdrWebServer {
     }
 
     onConnection(socket, req) {
+        this.envOfSocket.set(socket, req?.herdrEnv || defaultEnv());
         this.clients.add(socket);
+        this.ensurePolling(this.envOfSocket.get(socket));
         if (parseDevice(req?.url) === 'mobile') {
             this.mobileSockets.add(socket);
             this.publishMobileViewer();
@@ -314,8 +366,9 @@ class HerdrWebServer {
         this.startClipboardWatch();
         socket.on('message', (raw) => this.onMessage(socket, raw));
         socket.on('close', () => this.dropClient(socket));
-        if (this.lastTopology) {
-            this.send(socket, this.lastTopology);
+        const topology = this.topologyByEnv.get(this.envOfSocket.get(socket).id)?.last;
+        if (topology) {
+            this.send(socket, topology);
         }
     }
 
@@ -386,7 +439,7 @@ class HerdrWebServer {
             return;
         }
         if (type === 'refresh_topology') {
-            this.pollTopology();
+            void this.pollTopology(this.envFor(socket));
             return;
         }
         this.send(socket, { type: 'error', message: `unknown message type: ${String(type)}` });
@@ -438,6 +491,7 @@ class HerdrWebServer {
         const session = new PtySession({
             command: process.env.HERDR_BIN_PATH || 'herdr',
             args: this.config.herdrArgs,
+            env: this.envFor(socket).default ? null : childEnvFor(this.envFor(socket)),
         });
         const pending = { data: '', timer: null };
         const flush = () => {
@@ -482,23 +536,74 @@ class HerdrWebServer {
         this.ptyBySocket.set(socket, session);
     }
 
-    async pollTopology() {
-        let workspaces;
-        let panes;
-        try {
-            [workspaces, panes] = await Promise.all([herdr.listWorkspaces(), herdr.listPanes()]);
-        } catch (error) {
-            this.broadcast({ type: 'error', message: `herdr unreachable: ${error.message}` });
+    envFor(socket) {
+        return this.envOfSocket.get(socket) || defaultEnv();
+    }
+
+    topologyState(envInfo) {
+        let state = this.topologyByEnv.get(envInfo.id);
+        if (!state) {
+            state = { env: envInfo, watcher: new StateWatcher(), last: null, busy: false };
+            this.topologyByEnv.set(envInfo.id, state);
+        }
+        state.env = envInfo;
+        return state;
+    }
+
+    ensurePolling(envInfo) {
+        const fresh = !this.topologyByEnv.has(envInfo.id);
+        this.topologyState(envInfo);
+        if (fresh) {
+            void this.pollTopology(envInfo);
+        }
+    }
+
+    // Polls the default env always (push notifications) and any env with a client attached.
+    async pollAll() {
+        const wanted = new Map();
+        const defaults = defaultEnv();
+        wanted.set(defaults.id, defaults);
+        for (const socket of this.clients) {
+            const envInfo = this.envOfSocket.get(socket);
+            if (envInfo) {
+                wanted.set(envInfo.id, envInfo);
+            }
+        }
+        for (const id of [...this.topologyByEnv.keys()]) {
+            if (!wanted.has(id)) {
+                this.topologyByEnv.delete(id);
+            }
+        }
+        await Promise.all([...wanted.values()].map((envInfo) => this.pollTopology(envInfo)));
+    }
+
+    async pollTopology(envInfo = defaultEnv()) {
+        const state = this.topologyState(envInfo);
+        if (state.busy) {
             return;
         }
-        this.lastTopology = { type: 'topology', workspaces, panes };
-        this.broadcast(this.lastTopology);
-        const events = this.watcher.update(panes);
-        for (const event of events) {
-            this.broadcast({ type: 'agent_event', event });
-            if (event.from !== null) {
-                void this.push.notifyAll(HerdrWebServer.pushPayloadFor(event), { routine: !event.notifyWorthy });
+        state.busy = true;
+        try {
+            let workspaces;
+            let panes;
+            try {
+                [workspaces, panes] = await Promise.all([herdr.listWorkspaces(envInfo), herdr.listPanes(envInfo)]);
+            } catch (error) {
+                this.broadcast({ type: 'error', message: `herdr unreachable: ${error.message}` }, envInfo.id);
+                return;
             }
+            state.last = { type: 'topology', workspaces, panes };
+            this.broadcast(state.last, envInfo.id);
+            const events = state.watcher.update(panes);
+            for (const event of events) {
+                this.broadcast({ type: 'agent_event', event }, envInfo.id);
+                // push notifications cover the user's own (default) herdr only
+                if (event.from !== null && envInfo.default) {
+                    void this.push.notifyAll(HerdrWebServer.pushPayloadFor(event), { routine: !event.notifyWorthy });
+                }
+            }
+        } finally {
+            state.busy = false;
         }
     }
 
@@ -514,8 +619,11 @@ class HerdrWebServer {
         return { title: `${agent}: ${event.from} → ${event.to}`, body: where, tag: event.paneId };
     }
 
-    broadcast(payload) {
+    broadcast(payload, envId = null) {
         for (const socket of this.clients) {
+            if (envId !== null && this.envOfSocket.get(socket)?.id !== envId) {
+                continue;
+            }
             this.send(socket, payload);
         }
     }

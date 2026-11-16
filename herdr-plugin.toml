@@ -11,6 +11,21 @@ command = ["npm", "install", "--omit=dev"]
 [[startup]]
 command = ["node", "server.js"]
 
+# herdr spawns [[startup]] processes only when its server boots and never
+# restarts one that dies. These hooks re-run an idempotent liveness check so a
+# crashed web server heals on the next UI interaction.
+[[events]]
+on = "pane.focused"
+command = ["bash", "scripts/ensure-server.sh"]
+
+[[events]]
+on = "tab.created"
+command = ["bash", "scripts/ensure-server.sh"]
+
+[[events]]
+on = "workspace.created"
+command = ["bash", "scripts/ensure-server.sh"]
+
 [[actions]]
 id = "open"
 title = "Open Herdr Web in browser"

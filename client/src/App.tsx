@@ -11,6 +11,7 @@ import type { NotificationSettings } from './lib/notification-settings';
 import { copyText } from './lib/clipboard';
 import { quoteShellPath, uploadImage, validateImageFile } from './lib/terminal-image';
 import type { NotificationSettingsHelp } from './lib/notifications';
+import { useEnvs } from './hooks/useEnvs';
 import { useHerdrSocket } from './hooks/useHerdrSocket';
 import { useNotifications } from './hooks/useNotifications';
 import { useClientBidi } from './hooks/useClientBidi';
@@ -44,7 +45,8 @@ function initialKeyboardEnabled(): boolean {
 
 export function App() {
     useViewportHeight();
-    const { connected, status, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket();
+    const { ready: envsReady, envs, envId, notice: envNotice, select: selectEnv } = useEnvs();
+    const { connected, status, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket(envId, envsReady);
     useReloadOnNewBuild(connected);
     const clientBidi = useClientBidi();
     const [stored, setStored] = useState(loadStoredSettings);
@@ -83,6 +85,14 @@ export function App() {
         nextNoticeId += 1;
         setNotice({ id: nextNoticeId, text, tone });
     };
+
+    useEffect(() => {
+        if (envNotice) {
+            showNotice(envNotice, 'warn');
+        }
+        // showNotice only sets state
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [envNotice]);
 
     // Plain http only allows a clipboard write inside a tap, so the waiting copy is written by
     // the user's next tap anywhere on the page instead of requiring a tap on the Copy button.
@@ -144,7 +154,7 @@ export function App() {
         try {
             for (const file of accepted) {
                 try {
-                    const savedPath = await uploadImage(file);
+                    const savedPath = await uploadImage(file, envId);
                     send({ type: 'input', data: `${quoteShellPath(savedPath)} ` });
                     uploaded += 1;
                 } catch (error) {
@@ -199,8 +209,12 @@ export function App() {
                 panes={panes}
                 notificationsEnabled={notificationsEnabled || stored.toasts}
                 onOpenSettings={() => setSettingsOpen(true)}
+                envs={envs}
+                envId={envId}
+                onSelectEnv={selectEnv}
             />
             <XTermView
+                key={envId}
                 connected={connected}
                 keyboardEnabled={keyboardEnabled}
                 armedModifier={armedModifier}

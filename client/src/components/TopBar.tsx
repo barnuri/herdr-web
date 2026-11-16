@@ -1,6 +1,8 @@
 import type { ConnectionState } from '../lib/ws-client';
 import { statusDotClass } from '../lib/status';
 import type { HerdrPane } from '../types';
+import { EnvSelector } from './EnvSelector';
+import type { HerdrEnv } from '../lib/envs';
 
 interface TopBarProps {
     readonly connected: boolean;
@@ -8,6 +10,9 @@ interface TopBarProps {
     readonly panes: HerdrPane[];
     readonly notificationsEnabled: boolean;
     readonly onOpenSettings: () => void;
+    readonly envs: readonly HerdrEnv[];
+    readonly envId: string;
+    readonly onSelectEnv: (id: string) => void;
 }
 
 const STATUS_TEXT: Readonly<Record<ConnectionState, string>> = {
@@ -24,7 +29,7 @@ const STATUS_COLOR: Readonly<Record<ConnectionState, string>> = {
     failed: 'var(--blocked)',
 };
 
-export function TopBar({ connected, status, panes, notificationsEnabled, onOpenSettings }: TopBarProps) {
+export function TopBar({ connected, status, panes, notificationsEnabled, onOpenSettings, envs, envId, onSelectEnv }: TopBarProps) {
     const color = STATUS_COLOR[status];
     return (
         <>
@@ -39,6 +44,7 @@ export function TopBar({ connected, status, panes, notificationsEnabled, onOpenS
                         <span key={pane.pane_id} className={`herd-dot ${statusDotClass(pane.agent_status)}`} title={pane.terminal_title_stripped ?? pane.pane_id} />
                     ))}
                 </div>
+                <EnvSelector envs={envs} value={envId} onChange={onSelectEnv} />
                 <button
                     type="button"
                     className="icon-btn"

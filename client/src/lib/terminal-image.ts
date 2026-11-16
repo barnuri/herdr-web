@@ -1,3 +1,4 @@
+import { withEnv } from './envs';
 /** Mime types the server accepts and agents can read. */
 export const SUPPORTED_IMAGE_MIME_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
@@ -74,8 +75,8 @@ export function quoteShellPath(filePath: string): string {
 }
 
 /** Uploads one image and resolves to the absolute path the server saved it at. */
-export async function uploadImage(file: File): Promise<string> {
-    const response = await fetch(UPLOAD_ENDPOINT, {
+export async function uploadImage(file: File, envId = 'default'): Promise<string> {
+    const response = await fetch(withEnv(UPLOAD_ENDPOINT, envId), {
         method: 'POST',
         headers: { 'Content-Type': file.type },
         body: file,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { withEnv } from '../lib/envs';
 import { HerdrSocket } from '../lib/ws-client';
 import type { ConnectionState } from '../lib/ws-client';
 import type { AgentEvent, ClientMessage, HerdrPane, HerdrWorkspace, ServerMessage } from '../types';
@@ -19,7 +20,7 @@ export interface HerdrState {
     readonly subscribeTerminal: (handler: (message: TerminalMessage) => void) => () => void;
 }
 
-export function useHerdrSocket(): HerdrState {
+export function useHerdrSocket(envId: string, enabled = true): HerdrState {
     const [connected, setConnected] = useState(false);
     const [status, setStatus] = useState<ConnectionState>('connecting');
     const [workspaces, setWorkspaces] = useState<HerdrWorkspace[]>([]);
@@ -30,9 +31,19 @@ export function useHerdrSocket(): HerdrState {
     const terminalHandlersRef = useRef(new Set<(message: TerminalMessage) => void>());
 
     useEffect(() => {
+        if (!enabled) {
+            return undefined;
+        }
+        // nothing from the previous env may stay on screen while the new one connects
+        setConnected(false);
+        setStatus('connecting');
+        setWorkspaces([]);
+        setPanes([]);
+        setLastEvent(null);
+        setLastError(null);
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const device = window.matchMedia('(pointer: coarse)').matches ? 'mobile' : 'desktop';
-        const url = `${protocol}://${window.location.host}/ws?device=${device}`;
+        const url = withEnv(`${protocol}://${window.location.host}/ws?device=${device}`, envId);
         const socket = new HerdrSocket(
             url,
             (message: ServerMessage) => {
@@ -75,7 +86,7 @@ export function useHerdrSocket(): HerdrState {
             socketRef.current = null;
             socket.close();
         };
-    }, []);
+    }, [envId, enabled]);
 
     const send = useCallback((message: ClientMessage) => {
         socketRef.current?.send(message);
