@@ -3,6 +3,7 @@ import { withEnv } from '../lib/envs';
 import { HerdrSocket } from '../lib/ws-client';
 import type { ConnectionState } from '../lib/ws-client';
 import type { AgentEvent, ClientMessage, HerdrPane, HerdrWorkspace, ServerMessage } from '../types';
+import { appUrl } from '../lib/base';
 
 export type TerminalMessage =
     | { type: 'output'; data: string }
@@ -43,7 +44,7 @@ export function useHerdrSocket(envId: string, enabled = true): HerdrState {
         setLastError(null);
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const device = window.matchMedia('(pointer: coarse)').matches ? 'mobile' : 'desktop';
-        const url = withEnv(`${protocol}://${window.location.host}/ws?device=${device}`, envId);
+        const url = withEnv(`${protocol}://${window.location.host}${appUrl('ws')}?device=${device}`, envId);
         const socket = new HerdrSocket(
             url,
             (message: ServerMessage) => {

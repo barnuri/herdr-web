@@ -1,4 +1,4 @@
-# herdr-web-plugin — agent instructions
+# herdr-web — agent instructions
 
 ## Green tests mean ship it — don't wait for approval
 

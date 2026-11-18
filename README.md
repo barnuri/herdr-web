@@ -110,7 +110,9 @@ matches the request host or is listed in `allowedOrigins` in `config.json` (add 
 origin, e.g. `"allowedOrigins": ["https://machine.tailnet.ts.net"]`, if the proxy forwards a
 different Host). Note this is same-origin enforcement, not authentication — a DNS-rebinding
 attacker who controls both headers can still pass it, so keep the bind local and the proxy
-authenticated. To use it from a phone:
+authenticated. The `/ws/hc` upgrade is stricter: a request with no `Origin` header at all is
+refused with 403 (browsers always send one), so curl and scripts cannot reach it; `/ws` still
+allows a missing `Origin`. To use it from a phone:
 
 - **Tailscale (recommended):** `tailscale serve 7936` gives you an HTTPS URL on your tailnet.
   HTTPS (or localhost) is required for service workers, PWA install, and the Notification API

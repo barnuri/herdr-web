@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { clientBidiFromMeta } from '../lib/client-bidi';
+import { appUrl } from '../lib/base';
 
 // starts off: when herdr reorders rows itself, drawing them reversed even once is wrong
 export function useClientBidi(): boolean {
@@ -9,7 +10,7 @@ export function useClientBidi(): boolean {
         const load = async () => {
             let meta: unknown = null;
             try {
-                meta = await (await fetch('/meta')).json();
+                meta = await (await fetch(appUrl('meta'))).json();
             } catch (error) {
                 console.warn('herdr-web: /meta is unreachable, client BiDi stays on by default', error);
             }

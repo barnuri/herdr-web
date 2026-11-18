@@ -3,6 +3,7 @@ import { statusDotClass } from '../lib/status';
 import type { HerdrPane } from '../types';
 import { EnvSelector } from './EnvSelector';
 import type { HerdrEnv } from '../lib/envs';
+import type { AppView } from '../lib/desktop';
 
 interface TopBarProps {
     readonly connected: boolean;
@@ -13,6 +14,8 @@ interface TopBarProps {
     readonly envs: readonly HerdrEnv[];
     readonly envId: string;
     readonly onSelectEnv: (id: string) => void;
+    readonly view: AppView;
+    readonly onSelectView: (view: AppView) => void;
 }
 
 const STATUS_TEXT: Readonly<Record<ConnectionState, string>> = {
@@ -29,7 +32,7 @@ const STATUS_COLOR: Readonly<Record<ConnectionState, string>> = {
     failed: 'var(--blocked)',
 };
 
-export function TopBar({ connected, status, panes, notificationsEnabled, onOpenSettings, envs, envId, onSelectEnv }: TopBarProps) {
+export function TopBar({ connected, status, panes, notificationsEnabled, onOpenSettings, envs, envId, onSelectEnv, view, onSelectView }: TopBarProps) {
     const color = STATUS_COLOR[status];
     return (
         <>
@@ -44,7 +47,20 @@ export function TopBar({ connected, status, panes, notificationsEnabled, onOpenS
                         <span key={pane.pane_id} className={`herd-dot ${statusDotClass(pane.agent_status)}`} title={pane.terminal_title_stripped ?? pane.pane_id} />
                     ))}
                 </div>
-                <EnvSelector envs={envs} value={envId} onChange={onSelectEnv} />
+                <label className="env-select">
+                    <span className="env-select-caption">view</span>
+                    <select
+                        className="env-select-input"
+                        aria-label="View"
+                        title="Herdr TUI, or the herdr desktop app's terminals"
+                        value={view}
+                        onChange={(event) => onSelectView(event.target.value === 'desktop' ? 'desktop' : 'tui')}
+                    >
+                        <option value="tui">TUI</option>
+                        <option value="desktop">Desktop</option>
+                    </select>
+                </label>
+                {view === 'tui' && <EnvSelector envs={envs} value={envId} onChange={onSelectEnv} />}
                 <button
                     type="button"
                     className="icon-btn"

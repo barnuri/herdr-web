@@ -1,3 +1,4 @@
+import { appUrl } from './base';
 export const DEFAULT_ENV_ID = 'default';
 export const ENV_STORAGE_KEY = 'herdr-web:env';
 export const ENV_POLL_MS = 10000;
@@ -84,7 +85,7 @@ export function persistEnv(envId: string, storage: Pick<Storage, 'setItem' | 're
 
 export async function fetchEnvs(fetcher: typeof fetch = fetch): Promise<HerdrEnv[] | null> {
     try {
-        const response = await fetcher('/api/envs', { cache: 'no-store' });
+        const response = await fetcher(appUrl('api/envs'), { cache: 'no-store' });
         if (!response.ok) {
             return null;
         }

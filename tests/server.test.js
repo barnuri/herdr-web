@@ -161,6 +161,39 @@ describe('HerdrWebServer', () => {
       assert.ok(res.body.length > 0);
     });
 
+    test('/tui/ serves the same client as /', async () => {
+      const root = makeRes();
+      server.handleHttp({ url: '/', headers: {}, method: 'GET' }, root);
+      await root.finished;
+      const tui = makeRes();
+      server.handleHttp({ url: '/tui/', headers: {}, method: 'GET' }, tui);
+      await tui.finished;
+      assert.equal(tui.statusCode, 200);
+      assert.equal(String(tui.body), String(root.body));
+    });
+
+    test('/tui/meta reaches the same route as /meta', async () => {
+      const res = makeRes();
+      makeServer({ clientBidi: false }).handleHttp({ url: '/tui/meta', headers: {}, method: 'GET' }, res);
+      await res.finished;
+      assert.equal(res.statusCode, 200);
+    });
+
+    test('/tui redirects to /tui/', async () => {
+      const res = makeRes();
+      server.handleHttp({ url: '/tui', headers: {}, method: 'GET' }, res);
+      await res.finished;
+      assert.equal(res.statusCode, 301);
+      assert.equal(res.headers.Location, '/tui/');
+    });
+
+    test('/tui/../server.js is still refused', async () => {
+      const res = makeRes();
+      server.handleHttp({ url: '/tui/..%2Fserver.js', headers: {}, method: 'GET' }, res);
+      await res.finished;
+      assert.equal(res.statusCode, 403);
+    });
+
     test('/meta reports the clientBidi setting', async () => {
       const res = makeRes();
       makeServer({ clientBidi: false }).handleHttp({ url: '/meta', headers: {}, method: 'GET' }, res);
@@ -319,5 +352,106 @@ describe('HerdrWebServer', () => {
       server.send(socket, { type: 'topology' });
       assert.deepEqual(socket.sent, []);
     });
+  });
+});
+
+describe('WebSocket routing', () => {
+  let httpServer;
+  let server;
+  let port;
+  const clients = [];
+
+  beforeEach(async () => {
+    server = makeServer();
+    server.envs = { resolve: async (id) => (id === 'bogus' ? null : { id: id || 'default' }) };
+    server.onConnection = (socket) => { socket.close(); };
+    server.hcBridge = { onConnection: (socket) => { socket.close(); } };
+    httpServer = require('http').createServer();
+    server.startListener(httpServer, 0, 'http');
+    await new Promise((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+    port = httpServer.address().port;
+  });
+
+  afterEach(async () => {
+    for (const ws of clients.splice(0)) { ws.terminate(); }
+    await new Promise((resolve) => httpServer.close(resolve));
+  });
+
+  function connect(pathAndQuery, opts) {
+    const WebSocket = require('ws');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${pathAndQuery}`, opts);
+    clients.push(ws);
+    return new Promise((resolve, reject) => {
+      ws.once('open', () => resolve({ ok: true, ws }));
+      ws.once('unexpected-response', (req, res) => resolve({ ok: false, status: res.statusCode }));
+      ws.once('error', reject);
+    });
+  }
+
+  // raw upgrade request, used when the request target cannot be built through ws
+  function rawUpgrade(target) {
+    const net = require('net');
+    return new Promise((resolve, reject) => {
+      const sock = net.connect(port, '127.0.0.1', () => {
+        sock.write(`GET ${target} HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+      });
+      let data = '';
+      sock.on('data', (chunk) => { data += chunk.toString(); if (data.includes('\r\n')) { sock.destroy(); resolve(data); } });
+      sock.on('error', reject);
+    });
+  }
+
+  test('/ws/hc upgrades to the hc bridge for a same-origin browser', async () => {
+    const result = await connect('/ws/hc', { origin: `http://127.0.0.1:${port}` });
+    assert.equal(result.ok, true);
+  });
+
+  test('/ws/hc refuses a missing Origin with 403', async () => {
+    const result = await connect('/ws/hc');
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 403);
+  });
+
+  test('/ws/hc refuses a foreign Origin with 403', async () => {
+    const result = await connect('/ws/hc', { origin: 'http://evil.example.com' });
+    assert.equal(result.status, 403);
+  });
+
+  test('/ws/hc accepts an allowedOrigins entry', async () => {
+    server.config.allowedOrigins = ['https://phone.example.com'];
+    const result = await connect('/ws/hc', { origin: 'https://phone.example.com' });
+    assert.equal(result.ok, true);
+  });
+
+  test('/ws without Origin is still allowed', async () => {
+    const result = await connect('/ws');
+    assert.equal(result.ok, true);
+  });
+
+  test('/tui/ws upgrades for a known env', async () => {
+    const result = await connect('/tui/ws?env=dev');
+    assert.equal(result.ok, true);
+  });
+
+  test('/ws upgrades for the default env', async () => {
+    const result = await connect('/ws');
+    assert.equal(result.ok, true);
+  });
+
+  test('an unknown ws path is refused with 404', async () => {
+    const result = await connect('/ws/nope');
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 404);
+  });
+
+  test('an unknown env is refused with 400', async () => {
+    const result = await connect('/tui/ws?env=bogus');
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 400);
+  });
+
+  test('a malformed request url is refused with 400 instead of crashing', async () => {
+    const head = await rawUpgrade('//[');
+    assert.match(head, /^HTTP\/1\.1 400 /);
   });
 });

@@ -12,6 +12,7 @@ const { loadConfig } = require('./lib/config');
 const { resolveClientBidi } = require('./lib/herdr-bidi');
 const herdr = require('./lib/herdr');
 const { PtySession } = require('./lib/pty-session');
+const { HcBridge } = require('./lib/hc-bridge');
 const { ImageStore } = require('./lib/image-store');
 const { PushService } = require('./lib/push-service');
 const { SystemClipboard } = require('./lib/system-clipboard');
@@ -55,6 +56,7 @@ class HerdrWebServer {
         this.images = new ImageStore();
         this.clients = new Set();
         this.ptyBySocket = new Map();
+        this.hcBridge = new HcBridge();
         this.clipboardSeen = new WeakMap();
         this.clipboardTimer = null;
         this.topologyTimer = null;
@@ -90,10 +92,38 @@ class HerdrWebServer {
         });
         const wss = new WebSocketServer({
             server,
-            path: '/ws',
-            verifyClient: ({ origin, req }, done) => this.verifyClient(origin, req, done),
+            // the same socket answers at /ws (legacy) and /tui/ws (the client's base path)
+            verifyClient: ({ origin, req }, done) => {
+                let pathname;
+                try {
+                    pathname = new URL(req.url, 'http://localhost').pathname;
+                } catch {
+                    done(false, 400, 'malformed url');
+                    return;
+                }
+                if (pathname === '/ws/hc') {
+                    // browsers always send Origin; a missing one is never a browser, so refuse it here
+                    if (!origin || !this.isAllowedOrigin(origin, req)) {
+                        done(false, 403, 'forbidden origin');
+                        return;
+                    }
+                    done(true);
+                    return;
+                }
+                if (pathname !== '/ws' && pathname !== '/tui/ws') {
+                    done(false, 404, 'not found');
+                    return;
+                }
+                this.verifyClient(origin, req, done);
+            },
         });
-        wss.on('connection', (socket, req) => this.onConnection(socket, req));
+        wss.on('connection', (socket, req) => {
+            if (new URL(req.url, 'http://localhost').pathname === '/ws/hc') {
+                this.hcBridge.onConnection(socket);
+                return;
+            }
+            this.onConnection(socket, req);
+        });
         server.listen(port, this.config.host, () => {
             process.stdout.write(`herdr-web listening on ${scheme}://${this.config.host}:${port}\n`);
         });
@@ -153,6 +183,15 @@ class HerdrWebServer {
             res.writeHead(400);
             res.end('bad request');
             return;
+        }
+        // the legacy TUI client is served under /tui/ and at / (until the app client takes /)
+        if (requestPath === '/tui') {
+            res.writeHead(301, { Location: '/tui/' });
+            res.end();
+            return;
+        }
+        if (requestPath.startsWith('/tui/')) {
+            requestPath = requestPath.slice('/tui'.length);
         }
         if (requestPath.includes('\0')) {
             res.writeHead(400);

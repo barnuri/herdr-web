@@ -20,6 +20,11 @@ import { useViewportHeight } from './hooks/useViewportHeight';
 import type { Notice } from './components/ToastHost';
 import type { NotificationToggleResult } from './hooks/useNotifications';
 import type { ArmedModifier } from './lib/modifier-keys';
+import { appUrl } from './lib/base';
+import { DesktopBar, DesktopList } from './components/DesktopList';
+import { useHcSocket } from './hooks/useHcSocket';
+import { loadView, VIEW_STORAGE_KEY } from './lib/desktop';
+import type { AppView, DesktopTerminal } from './lib/desktop';
 
 const TOGGLE_NOTICES: Readonly<Record<NotificationToggleResult, Notice['text']>> = {
     'enabled-push': 'Push notifications on — delivered by the browser even when this page is closed',
@@ -48,6 +53,12 @@ export function App() {
     const { ready: envsReady, envs, envId, notice: envNotice, select: selectEnv } = useEnvs();
     const { connected, status, panes, lastEvent, lastError, send, subscribeTerminal } = useHerdrSocket(envId, envsReady);
     useReloadOnNewBuild(connected);
+    const [view, setView] = useState<AppView>(loadView);
+    const desktop = view === 'desktop';
+    const hc = useHcSocket(desktop);
+    // input from the bars goes to whichever terminal is on screen
+    const activeSend = desktop ? hc.send : send;
+    const activeConnected = desktop ? hc.connected && hc.attached !== null : connected;
     const clientBidi = useClientBidi();
     const [stored, setStored] = useState(loadStoredSettings);
     const { enabled: notificationsEnabled, toggle: toggleNotifications, notifyForEvent } = useNotifications(stored.allChanges);
@@ -59,6 +70,18 @@ export function App() {
     const [settingsOpen, setSettingsOpen] = useState(false);
     // text herdr copied that the browser refused to write without a tap (plain http)
     const [pendingCopy, setPendingCopy] = useState<string | null>(null);
+
+    useEffect(() => {
+        localStorage.setItem(VIEW_STORAGE_KEY, view);
+    }, [view]);
+
+    useEffect(() => {
+        if (hc.lastError) {
+            showNotice(hc.lastError, 'warn');
+        }
+        // showNotice only sets state
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [hc.lastError]);
 
     useEffect(() => {
         localStorage.setItem(KEYBOARD_STORAGE_KEY, String(keyboardEnabled));
@@ -155,7 +178,7 @@ export function App() {
             for (const file of accepted) {
                 try {
                     const savedPath = await uploadImage(file, envId);
-                    send({ type: 'input', data: `${quoteShellPath(savedPath)} ` });
+                    activeSend({ type: 'input', data: `${quoteShellPath(savedPath)} ` });
                     uploaded += 1;
                 } catch (error) {
                     showNotice(error instanceof Error ? error.message : 'Upload failed', 'warn');
@@ -167,6 +190,12 @@ export function App() {
 
         if (uploaded > 0) {
             showNotice(uploaded === 1 ? 'Image path added to the pane' : `${uploaded} image paths added to the pane`);
+        }
+    };
+
+    const onKillTerminal = (terminal: Pick<DesktopTerminal, 'address' | 'title'>) => {
+        if (window.confirm(`Close terminal ${terminal.title} (${terminal.address})? Its program is ended.`)) {
+            hc.kill(terminal.address);
         }
     };
 
@@ -190,7 +219,7 @@ export function App() {
             }
             let httpsUrl: string | null = null;
             try {
-                const meta = (await (await fetch('/meta')).json()) as { https: boolean; httpsPort: number };
+                const meta = (await (await fetch(appUrl('meta'))).json()) as { https: boolean; httpsPort: number };
                 if (meta.https) {
                     httpsUrl = `https://${window.location.hostname}:${meta.httpsPort}/`;
                 }
@@ -212,7 +241,42 @@ export function App() {
                 envs={envs}
                 envId={envId}
                 onSelectEnv={selectEnv}
+                view={view}
+                onSelectView={setView}
             />
+            {desktop && hc.attached === null && (
+                <DesktopList
+                    connected={hc.connected}
+                    world={hc.world}
+                    onAttach={hc.attach}
+                    onRun={hc.run}
+                    onKill={onKillTerminal}
+                />
+            )}
+            {desktop && hc.attached !== null && (
+                <DesktopBar
+                    terminal={hc.attached}
+                    onDetach={hc.detach}
+                    onKill={() => onKillTerminal({ address: hc.attached ?? '', title: hc.attached ?? '' })}
+                />
+            )}
+            {desktop && hc.attached !== null && (
+                <XTermView
+                    key={`hc:${hc.attached}`}
+                    connected={activeConnected}
+                    keyboardEnabled={keyboardEnabled}
+                    armedModifier={armedModifier}
+                    onModifierApplied={() => setArmedModifier(null)}
+                    send={hc.send}
+                    subscribeTerminal={hc.subscribeTerminal}
+                    onImageFiles={(files) => void onImageFiles(files)}
+                    onCopyText={(text) => void onCopyText(text)}
+                    bidi={clientBidi}
+                    resizeArmed={resizeArmed}
+                    onResizeApplied={() => setResizeArmed(false)}
+                />
+            )}
+            {!desktop && (
             <XTermView
                 key={envId}
                 connected={connected}
@@ -227,6 +291,7 @@ export function App() {
                 resizeArmed={resizeArmed}
                 onResizeApplied={() => setResizeArmed(false)}
             />
+            )}
             {pendingCopy !== null && (
                 <div className="copy-popup-backdrop">
                     <div className="copy-popup" role="dialog" aria-label="Copy to clipboard">
@@ -255,14 +320,14 @@ export function App() {
                 </div>
             )}
             <Composer
-                disabled={!connected}
+                disabled={!activeConnected}
                 keyboardEnabled={keyboardEnabled}
                 armedModifier={armedModifier}
                 onToggleKeyboard={() => setKeyboardEnabled((current) => !current)}
                 onToggleModifier={(modifier) => setArmedModifier((current) => (current === modifier ? null : modifier))}
                 resizeArmed={resizeArmed}
                 onToggleResize={() => setResizeArmed((current) => !current)}
-                onSendBytes={(bytes) => send({ type: 'input', data: bytes })}
+                onSendBytes={(bytes) => activeSend({ type: 'input', data: bytes })}
                 onImageFiles={(files) => void onImageFiles(files)}
                 uploadingImage={uploadingImage}
             />

@@ -1,4 +1,5 @@
 import { withEnv } from './envs';
+import { appUrl } from './base';
 /** Mime types the server accepts and agents can read. */
 export const SUPPORTED_IMAGE_MIME_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
@@ -14,7 +15,7 @@ const UNCONVERTIBLE_IMAGE_MIME_TYPES: readonly string[] = [
 /** Kept in step with `ImageStore.MAX_BYTES` on the server. */
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
-const UPLOAD_ENDPOINT = '/images';
+const UPLOAD_ENDPOINT = appUrl('images');
 
 const normalizeType = (type: string): string => type.split(';')[0].trim().toLowerCase();
 

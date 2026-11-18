@@ -17,6 +17,42 @@
 </head>
 <body>
     <div id="root"></div>
+    <script>
+        // Visible failure instead of a blank page: a stale service worker or cache, a blocked script,
+        // or a crash before React mounts all end here.
+        (function () {
+            var shown = false;
+            function show(reason) {
+                if (shown) return;
+                shown = true;
+                var box = document.createElement('div');
+                box.setAttribute('role', 'alert');
+                box.style.cssText = 'font:14px/1.5 system-ui,sans-serif;color:#e6e6e6;background:#050607;padding:24px;min-height:100vh;box-sizing:border-box';
+                box.innerHTML = '<h1 style="font-size:18px;margin:0 0 8px">Herdr Web did not start</h1>' +
+                    '<p style="margin:0 0 12px;color:#9aa0a6"></p>' +
+                    '<button id="hw-reload" style="font:inherit;padding:8px 14px;margin-right:8px">Reload</button>' +
+                    '<button id="hw-reset" style="font:inherit;padding:8px 14px">Reset cache and reload</button>';
+                box.querySelector('p').textContent = reason;
+                document.body.appendChild(box);
+                document.getElementById('hw-reload').onclick = function () { location.reload(); };
+                document.getElementById('hw-reset').onclick = function () {
+                    var jobs = [];
+                    if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+                    if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+                    Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+                };
+            }
+            window.addEventListener('error', function (e) {
+                if (!document.getElementById('root').firstChild) show(e && e.message ? e.message : 'A script failed to load.');
+            }, true);
+            window.addEventListener('unhandledrejection', function (e) {
+                if (!document.getElementById('root').firstChild) show(String(e && e.reason ? e.reason : 'Unhandled error'));
+            });
+            setTimeout(function () {
+                if (!document.getElementById('root').firstChild) show('The page loaded but the app did not mount within 8 seconds. A stale cache or service worker is the usual cause.');
+            }, 8000);
+        })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
 </body>
 </html>

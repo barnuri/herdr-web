@@ -1,3 +1,4 @@
+import { appUrl } from './base';
 // VAPID application server keys arrive base64url-encoded; PushManager wants raw bytes
 export function urlBase64ToUint8Array(base64Url: string): Uint8Array {
     const padding = '='.repeat((4 - (base64Url.length % 4)) % 4);
@@ -34,13 +35,13 @@ export async function subscribeToPush(allChanges = false): Promise<PushSubscript
     if (!('pushManager' in registration)) {
         return 'no-push-manager';
     }
-    const keyResponse = await fetch('/push/public-key');
+    const keyResponse = await fetch(appUrl('push/public-key'));
     const { publicKey } = (await keyResponse.json()) as { publicKey: string };
     const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
     });
-    await fetch('/push/subscribe', {
+    await fetch(appUrl('push/subscribe'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // the verbosity preference rides along: background push is filtered on the
@@ -56,7 +57,7 @@ export async function unsubscribeFromPush(): Promise<void> {
     if (!subscription) {
         return;
     }
-    await fetch('/push/unsubscribe', {
+    await fetch(appUrl('push/unsubscribe'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ endpoint: subscription.endpoint }),

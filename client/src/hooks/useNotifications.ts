@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatAgentNotification } from '../lib/notifications';
 import { subscribeToPush, unsubscribeFromPush } from '../lib/push';
 import type { AgentEvent } from '../types';
+import { appUrl } from '../lib/base';
 
 const STORAGE_KEY = 'herdr-web:notifications-enabled';
 const MODE_STORAGE_KEY = 'herdr-web:notifications-mode';
@@ -125,10 +126,10 @@ export function useNotifications(allChanges: boolean): NotificationControls {
             const { title, body } = formatAgentNotification(event);
             const registration = await navigator.serviceWorker?.getRegistration();
             if (registration) {
-                await registration.showNotification(title, { body, icon: '/icon-192.png', tag: event.paneId });
+                await registration.showNotification(title, { body, icon: appUrl('icon-192.png'), tag: event.paneId });
                 return;
             }
-            new Notification(title, { body, icon: '/icon-192.png', tag: event.paneId });
+            new Notification(title, { body, icon: appUrl('icon-192.png'), tag: event.paneId });
         },
         [enabled, mode],
     );

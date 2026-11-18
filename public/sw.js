@@ -1,5 +1,5 @@
-const CACHE_NAME = 'herdr-web-v3';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon-180.png', '/fonts/SymbolsNerdFontMono-Regular.woff2'];
+const CACHE_NAME = 'herdr-web-v4';
+const APP_SHELL = ['/tui/', '/tui/manifest.webmanifest', '/tui/icon.svg', '/tui/icon-192.png', '/tui/icon-512.png', '/tui/icon-maskable-512.png', '/tui/apple-touch-icon-180.png', '/tui/fonts/SymbolsNerdFontMono-Regular.woff2'];
 
 self.addEventListener('install', (event) => {
     event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -15,7 +15,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
-    if (event.request.method !== 'GET' || url.pathname === '/ws') {
+    if (event.request.method !== 'GET' || url.pathname === '/tui/ws') {
         return;
     }
     // network-first so fresh builds win; cache is the offline fallback
@@ -45,7 +45,7 @@ self.addEventListener('push', (event) => {
     event.waitUntil(
         self.registration.showNotification(payload.title, {
             body: payload.body,
-            icon: '/icon-192.png',
+            icon: '/tui/icon-192.png',
             tag: payload.tag || 'herdr-web',
         }),
     );
@@ -59,7 +59,7 @@ self.addEventListener('notificationclick', (event) => {
             if (existing) {
                 return existing.focus();
             }
-            return self.clients.openWindow('/');
+            return self.clients.openWindow('/tui/');
         }),
     );
 });

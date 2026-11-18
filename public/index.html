@@ -5,19 +5,55 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual" />
     <meta name="theme-color" content="#050607" />
     <title>Herdr Web</title>
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon-180.png" />
+    <link rel="manifest" href="/tui/manifest.webmanifest" />
+    <link rel="icon" href="/tui/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/tui/apple-touch-icon-180.png" />
     <meta name="application-name" content="Herdr Web" />
     <!-- iOS ignores the manifest, so the standalone hints live here -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Herdr" />
-  <script type="module" crossorigin src="/assets/index-CnCg2GMX.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-PAMxIlpL.css">
+  <script type="module" crossorigin src="/tui/assets/index-DRR7Lb-I.js"></script>
+  <link rel="stylesheet" crossorigin href="/tui/assets/index-BuncYcTY.css">
 </head>
 <body>
     <div id="root"></div>
+    <script>
+        // Visible failure instead of a blank page: a stale service worker or cache, a blocked script,
+        // or a crash before React mounts all end here.
+        (function () {
+            var shown = false;
+            function show(reason) {
+                if (shown) return;
+                shown = true;
+                var box = document.createElement('div');
+                box.setAttribute('role', 'alert');
+                box.style.cssText = 'font:14px/1.5 system-ui,sans-serif;color:#e6e6e6;background:#050607;padding:24px;min-height:100vh;box-sizing:border-box';
+                box.innerHTML = '<h1 style="font-size:18px;margin:0 0 8px">Herdr Web did not start</h1>' +
+                    '<p style="margin:0 0 12px;color:#9aa0a6"></p>' +
+                    '<button id="hw-reload" style="font:inherit;padding:8px 14px;margin-right:8px">Reload</button>' +
+                    '<button id="hw-reset" style="font:inherit;padding:8px 14px">Reset cache and reload</button>';
+                box.querySelector('p').textContent = reason;
+                document.body.appendChild(box);
+                document.getElementById('hw-reload').onclick = function () { location.reload(); };
+                document.getElementById('hw-reset').onclick = function () {
+                    var jobs = [];
+                    if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+                    if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+                    Promise.all(jobs).catch(function () {}).then(function () { location.reload(); });
+                };
+            }
+            window.addEventListener('error', function (e) {
+                if (!document.getElementById('root').firstChild) show(e && e.message ? e.message : 'A script failed to load.');
+            }, true);
+            window.addEventListener('unhandledrejection', function (e) {
+                if (!document.getElementById('root').firstChild) show(String(e && e.reason ? e.reason : 'Unhandled error'));
+            });
+            setTimeout(function () {
+                if (!document.getElementById('root').firstChild) show('The page loaded but the app did not mount within 8 seconds. A stale cache or service worker is the usual cause.');
+            }, 8000);
+        })();
+    </script>
 </body>
 </html>
